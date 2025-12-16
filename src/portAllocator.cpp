@@ -1,0 +1,44 @@
+#include "../inc/portAllocator.h"
+#include "../inc/logger2.h"
+#include <sys/socket.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <cstring>
+
+PortAllocator::PortAllocator() : port_(-1), listenFd_(-1) {}
+PortAllocator::~PortAllocator() { release(); }
+
+bool PortAllocator::claim(int startPort, int endPort) {
+    for (int p = startPort; p <= endPort; ++p) {
+        int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) continue;
+
+        int opt = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(p);
+
+        if (::bind(fd, (sockaddr*)&addr, sizeof(addr)) == 0) {
+            port_ = p;
+            listenFd_ = fd;
+            logInfo("claimed port %d (fd=%d)", port_, listenFd_);
+            return true;
+        }
+        ::close(fd);
+    }
+
+    logWarn("no available port");
+    return false;
+}
+
+void PortAllocator::release() {
+    if (listenFd_ >= 0) {
+        ::close(listenFd_);
+        logInfo("released port %d (fd=%d)", port_, listenFd_);
+        listenFd_ = -1;
+        port_ = -1;
+    }
+}
