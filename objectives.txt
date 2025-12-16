@@ -1,0 +1,152 @@
+Here’s a clean checklist of what you’ve already done vs what’s still missing / not solid yet for your seed app (C++11, localhost network download, 32B chunks).
+
+--Done already
+
+Core networking / protocol
+	•	Each instance claims a free port in 9000–9004 and keeps the bound socket open.
+	•	Each instance runs a seeder server thread (runServer) and accepts connections.
+	•	Protocol commands implemented:
+	•	META <filename>\n → returns <META> <size>\n or <FILE_NOT_FOUND>\n
+	•	GET <filename> <chunkIndex>\n → returns <CHUNK> idx bytes\n + raw 32B chunk data
+	•	Download logic exists:
+	•	Get meta first
+	•	Compute total chunks
+	•	Loop chunks and request them from seeders
+	•	Write chunk to correct file offset
+
+File discovery
+	•	File scan exists (via dirent.h) to list files on other ports locally by reading folders bin/ports/<port>/.
+
+Refactor direction
+	•	You started splitting into reusable classes:
+	•	FileScanner
+	•	ChunkDownloader
+	•	You’re moving toward reusable socket helpers (receiveExact, receiveCString, etc.)
+
+⸻
+
+-- Not done yet / still needs work
+
+A) “Scan files via network, not by local folder”
+
+Right now your scanning is folder-based. You wanted:
+
+“Instead of finding it locally, make it in the server. If other ports are not activated, scanning the files will not appear.”
+
+So you still need:
+	•	Add a server command like:
+	•	LIST\n → server replies with a list of filenames (and maybe count/lines)
+	•	Client scanning should:
+	•	Connect to each port
+	•	If connect succeeds, send LIST\n
+	•	Parse response → build FileEntry{filename, seeders}
+
+This is important because folder scanning will “see” files even if the port isn’t actually running.
+
+⸻
+
+B) Reliable receiving (your receiveData is not safe for protocol)
+
+Your current clientSocket::receiveData() is:
+	•	one read() call only
+	•	adds '\0'
+	•	may return partial data
+	•	not binary-safe for chunk payload logic
+
+So you still need:
+	•	Implement in clientSocket:
+	•	bool receiveExact(void* buf, size_t len)  ✅ (binary-safe)
+	•	int receiveLine(char* out, size_t cap) ✅ (newline-based header parsing)
+	•	Optional: int receiveCString(...) if you really want (but line-based is better)
+
+Then update downloader to use:
+	•	header → receiveLine
+	•	payload → receiveExact
+
+This fixes “partial chunk read” and avoids the whole +1 / -1 confusion.
+
+⸻
+
+C) “The more seeders matched = faster download”
+
+Right now you rotate seeders per chunk, but it’s still single-threaded.
+To truly make it faster:
+	•	Parallel chunk downloading:
+	•	spawn N worker threads (N = seeders count or capped)
+	•	each thread downloads assigned chunks
+	•	write chunks safely (either pwrite() or mutex around fseek/fwrite)
+	•	Or use a simple scheduler queue: chunks pending → seeders fetch → mark done
+
+If you stay single-threaded, more seeders only helps reliability, not speed.
+
+⸻
+
+D) Download status menu
+
+You have menu option [2] Download status, but it’s still placeholder.
+Need:
+	•	Store per-download state:
+	•	filename
+	•	totalChunks
+	•	completedChunks
+	•	startedAt
+	•	status: downloading / done / failed
+	•	Show it in option [2]
+
+⸻
+
+E) UI requirements not fully enforced
+
+You wanted:
+	•	after every transaction, return to main menu ✅ mostly done
+	•	show:
+	•	“Locating seeders… Found [N] Seeders.”
+	•	“Download started: [id] file”
+You print some of this, but still ensure it’s consistent:
+	•	Always show correct file ID (currently you reuse menu choice; ok but be consistent)
+	•	If download fails, show why (no seeders reachable vs meta mismatch vs chunk fail)
+
+⸻
+
+F) Clean refactor is incomplete
+
+Your menu.cpp still mixes:
+	•	port claiming
+	•	server implementation
+	•	protocol parsing
+	•	scanning
+	•	downloading
+	•	UI
+
+You still need to finish splitting:
+	•	PortManager class
+	•	SeedServer class (start/stop)
+	•	NetIO helpers (readLine/sendAll/recvExact)
+	•	Keep menu.cpp only for input + calling services
+
+⸻
+
+Quick “next best step” order
+
+If you want the fastest progress with the biggest payoff:
+	1.	Fix client socket receive (receiveLine + receiveExact)
+	2.	Add LIST command and update scan to be network-based
+	3.	Implement DownloadStatus store + display
+	4.	Optional: multithreaded downloader for “more seeders = faster”
+
+If you paste your current clientSocket.cpp I can show the exact receiveLine() and receiveExact() implementations in C++11 that match your logger style.
+
+
+//
+Sure — we can pause here.
+
+When you’re ready to continue later, send:
+	•	your current clientSocket.cpp and clientSocket.h (and any new headers you made like chunkDownloader.h/.cpp, fileScanner.h/.cpp)
+	•	tell me which next step you want to tackle first:
+
+	1.	receiveLine() + receiveExact() in clientSocket (fix partial reads)
+	2.	Add LIST command (network-based scanning)
+	3.	Download status tracker + menu [2]
+	4.	Multithread downloader (so more seeders = faster)
+
+Just drop the files and we’ll proceed.
