@@ -22,6 +22,9 @@ public:
 
     bool receiveExact(void* buffer, size_t len);
 
+    int receiveLine(char* buffer, size_t cap);
+    
+
     void closeConn();
 
 private:

@@ -150,3 +150,20 @@ When you’re ready to continue later, send:
 	4.	Multithread downloader (so more seeders = faster)
 
 Just drop the files and we’ll proceed.
+
+
+
+
+
+
+/////
+	1.	Server side: send header + data exactly
+	•	Always send <CHUNK> idx nbytes\n then exactly nbytes bytes
+	2.	Handle partial send/recv everywhere
+	•	Your sendData() is not guaranteed to send all bytes; use sendAll() for protocol messages too (or update sendData() internally to sendAll)
+	3.	Scan files via network (Option 1 plan)
+	•	Add a LIST\n request on server that returns filenames + sizes
+	•	Client calls LIST instead of opendir() on other ports
+	4.	Error-proofing
+	•	If header is invalid or missing newline → treat as bad request
+	•	Add timeout later (so a dead peer doesn’t hang you)

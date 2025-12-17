@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
+#include <dirent.h>
+
 
 SeedServer::SeedServer(int chunkSize) : running_(false), chunkSize_(chunkSize) {}
 SeedServer::~SeedServer() { stop(); }
@@ -27,6 +29,46 @@ long long SeedServer::getFileSizeBytes(const char* path) {
     if (::stat(path, &st) != 0) return -1;
     return (long long)st.st_size;
 }
+
+bool SeedServer::handleList(int clientFd, int port) {
+    // Reply format:
+    // <LIST>\n
+    // FILE <name>\n   (repeat)
+    // <END>\n
+
+    const char* begin = "<LIST>\n";
+    if (!NetIo::sendAll(clientFd, begin, strlen(begin))) return false;
+
+    char dirPath[256];
+    snprintf(dirPath, sizeof(dirPath), "bin/ports/%d", port);
+
+    DIR* dir = opendir(dirPath);
+    if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+
+            char full[512];
+            snprintf(full, sizeof(full), "%s/%s", dirPath, entry->d_name);
+
+            struct stat st;
+            if (stat(full, &st) != 0) continue;
+            if (!S_ISREG(st.st_mode)) continue;
+
+            char row[512];
+            snprintf(row, sizeof(row), "FILE %s\n", entry->d_name);
+            if (!NetIo::sendAll(clientFd, row, strlen(row))) {
+                closedir(dir);
+                return false;
+            }
+        }
+        closedir(dir);
+    }
+
+    const char* end = "<END>\n";
+    return NetIo::sendAll(clientFd, end, strlen(end));
+}
+
 
 void SeedServer::serveLoop(int port, int listenFd) {
     serversocket ss(port);
@@ -53,6 +95,12 @@ void SeedServer::serveLoop(int port, int listenFd) {
 
         size_t L = strlen(line);
         if (L && line[L-1] == '\n') line[L-1] = '\0';
+
+        if (strcmp(line, "LIST") == 0) {
+            handleList(clientFd, port);
+            ss.close_fd(clientFd);
+            continue;
+        }
 
         if (strncmp(line, "META ", 5) == 0) {
             handleMeta(clientFd, port, line + 5);

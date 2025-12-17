@@ -1,8 +1,11 @@
 #include "../inc/fileScanner.h"
-#include <dirent.h>
+#include "../inc/clientsocket.h"
+#include "../inc/logger2.h"
 #include <sys/stat.h>
 #include <cstdio>
 #include <cstring>
+#include <vector>
+#include <string>
 
 FileScanner::FileScanner(int startPort, int endPort)
 : startPort_(startPort), endPort_(endPort) {}
@@ -25,24 +28,68 @@ bool FileScanner::existsLocal(int myPort, const std::string& filename) const {
     return stat(full.c_str(), &st) == 0;
 }
 
+static void stripNewlines(char* s) {
+    if (!s) return;
+    size_t L = strlen(s);
+    while (L > 0 && (s[L - 1] == '\n' || s[L - 1] == '\r')) {
+        s[L - 1] = '\0';
+        --L;
+    }
+}
+
+static bool listFilesFromPort(int port, std::vector<std::string>& outNames) {
+    outNames.clear();
+
+    clientSocket cs;
+    if (!cs.connectServer("127.0.0.1", port)) {
+        return false;
+    }
+
+    if (!cs.sendData("LIST\n")) {
+        return false;
+    }
+
+    char line[512];
+
+    int n = cs.receiveLine(line, sizeof(line));
+    if (n <= 0) return false;
+    stripNewlines(line);
+
+    if (strcmp(line, "<LIST>") != 0) {
+        logWarn("LIST: unexpected first line from port %d: '%s'", port, line);
+        return false;
+    }
+
+    while (true) {
+        n = cs.receiveLine(line, sizeof(line));
+        if (n <= 0) return false;
+        stripNewlines(line);
+
+        if (strcmp(line, "<END>") == 0) break;
+
+        if (strncmp(line, "FILE ", 5) == 0) {
+            const char* name = line + 5;
+            if (*name) outNames.push_back(std::string(name));
+        }
+    }
+
+    return true;
+}
+
 std::vector<FileEntry> FileScanner::scanOtherPorts(int myPort) const {
     std::vector<FileEntry> out;
 
     for (int port = startPort_; port <= endPort_; ++port) {
         if (port == myPort) continue;
 
-        std::string dirPath = portDirectory(port);
-        DIR* dir = opendir(dirPath.c_str());
-        if (!dir) continue;
+        //if port inactive or unsupported list
+        std::vector<std::string> names;
+        if (!listFilesFromPort(port, names)) {
+            continue; 
+        }
 
-        dirent* entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
-
-            std::string fname = entry->d_name;
-            std::string fullpath = dirPath + "/" + fname;
-
-            if (!isRegularFile(fullpath)) continue;
+        for (size_t k = 0; k < names.size(); ++k) {
+            const std::string& fname = names[k];
 
             int idx = -1;
             for (int i = 0; i < (int)out.size(); ++i) {
@@ -51,7 +98,9 @@ std::vector<FileEntry> FileScanner::scanOtherPorts(int myPort) const {
 
             if (idx >= 0) {
                 bool already = false;
-                for (int p : out[idx].seeders) if (p == port) { already = true; break; }
+                for (size_t j = 0; j < out[idx].seeders.size(); ++j) {
+                    if (out[idx].seeders[j] == port) { already = true; break; }
+                }
                 if (!already) out[idx].seeders.push_back(port);
             } else {
                 FileEntry fe;
@@ -60,7 +109,6 @@ std::vector<FileEntry> FileScanner::scanOtherPorts(int myPort) const {
                 out.push_back(fe);
             }
         }
-        closedir(dir);
     }
 
     return out;

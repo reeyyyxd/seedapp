@@ -21,7 +21,7 @@ bool ChunkDownloader::fetchMeta(const std::string& filename, int seederPort, lon
     if (!cs.sendData(req)) return false;
 
     char line[128];
-    int n = cs.receiveCString(line, sizeof(line));  
+    int n = cs.receiveLine(line, sizeof(line));  
     if (n <= 0) return false;
 
     if (!strncmp(line, "<FILE_NOT_FOUND>", 15)) return false;
@@ -46,7 +46,7 @@ bool ChunkDownloader::fetchChunk(const std::string& filename, int seederPort, in
     if (!cs.sendData(std::string(req))) return false;
 
     char header[128];
-    int hn = cs.receiveCString(header, sizeof(header));
+    int hn = cs.receiveLine(header, sizeof(header));
     if (hn <= 0) return false;
 
     if (!strncmp(header, "<FILE_NOT_FOUND>", 15)) return false;

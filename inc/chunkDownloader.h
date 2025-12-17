@@ -1,4 +1,4 @@
-#ifndef __CHUCKDOWNLOADER_H__
+#ifndef __CHUNCKDOWNLOADER_H__
 #define __CHUNCKDOWNLOADER_H__
 
 #include <string>

@@ -17,6 +17,7 @@ private:
     bool handleGet(int clientFd, int port, const char* line);
 
     long long getFileSizeBytes(const char* path);
+    bool handleList(int clientFd, int port);
 
     std::atomic<bool> running_;
     std::thread thread_;

@@ -98,3 +98,149 @@ int clientSocket::receiveData(char* buffer, size_t size) {
     logDbg("received %zd bytes", n);
     return (int)n;
 }
+
+bool clientSocket::sendAll(const void* data, size_t len) {
+    if (client_fd < 0) {
+        logErr("sendAll() called but socket fd is invalid");
+        return false;
+    }
+    if (!data && len != 0) {
+        logErr("sendAll() invalid data pointer");
+        return false;
+    }
+
+    const char* p = static_cast<const char*>(data);
+    size_t total = 0;
+
+    while (total < len) {
+        ssize_t n = ::send(client_fd, p + total, len - total, 0);
+        if (n < 0) {
+            if (errno == EINTR) continue; // interrupted, retry
+            logErr("send() failed in sendAll(): %s", strerror(errno));
+            return false;
+        }
+        if (n == 0) {
+            logErr("send() returned 0 in sendAll() (connection closed?)");
+            return false;
+        }
+        total += static_cast<size_t>(n);
+    }
+
+    return true;
+}
+
+bool clientSocket::receiveExact(void* buffer, size_t len) {
+    if (client_fd < 0) {
+        logErr("receiveExact() called but socket fd is invalid");
+        return false;
+    }
+    if (!buffer && len != 0) {
+        logErr("receiveExact() invalid buffer pointer");
+        return false;
+    }
+
+    char* p = static_cast<char*>(buffer);
+    size_t total = 0;
+
+    while (total < len) {
+        ssize_t n = ::recv(client_fd, p + total, len - total, 0);
+        if (n < 0) {
+            if (errno == EINTR) 
+            continue; 
+
+            logErr("recv() failed in receiveExact(): %s", strerror(errno));
+            return false;
+        }
+        if (n == 0) {
+            logErr("peer closed connection while receiving exact %zu bytes (got %zu)", len, total);
+            return false;
+        }
+        total += static_cast<size_t>(n);
+    }
+
+    return true;
+}
+
+int clientSocket::receiveCString(char* buffer, size_t cap) {
+    if (client_fd < 0) {
+        logErr("receiveCString() called but socket fd is invalid");
+        return -1;
+    }
+    if (!buffer || cap == 0) {
+        logErr("receiveCString() invalid buffer/cap");
+        return -1;
+    }
+
+    size_t i = 0;
+    while (i + 1 < cap) { 
+        char ch;
+        ssize_t n = ::recv(client_fd, &ch, 1, 0);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            logErr("recv() failed in receiveCString(): %s", strerror(errno));
+            return -1;
+        }
+        if (n == 0) {
+            // connection closed
+            break;
+        }
+
+        buffer[i++] = ch;
+        if (ch == '\0') {
+            return (int)i;
+        }
+    }
+
+    buffer[cap - 1] = '\0';
+    logWarn("receiveCString(): string exceeded cap=%zu (truncated)", cap);
+    return (int)cap;
+}
+
+int clientSocket::receiveLine(char* buffer, size_t cap) {
+    if (client_fd < 0) {
+        logErr("receiveLine() called but socket fd is invalid");
+        return 0; 
+    }
+    if (!buffer || cap == 0) {
+        logErr("receiveLine() invalid buffer/cap");
+        return 0;
+    }
+
+    size_t i = 0;
+    bool truncated = false;
+
+    while (true) {
+        char ch;
+        ssize_t n = ::recv(client_fd, &ch, 1, 0);
+
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            logErr("recv() failed in receiveLine(): %s", strerror(errno));
+            buffer[i < cap ? i : cap - 1] = '\0';
+            return 0;
+        }
+
+        if (n == 0) {
+            break;
+        }
+
+        if (!truncated) {
+            if (i + 1 < cap) {
+                buffer[i++] = ch;
+            } else {
+                truncated = true;
+            }
+        }
+
+        if (ch == '\n') break;
+    }
+
+    if (i >= cap) i = cap - 1;
+    buffer[i] = '\0';
+
+    if (truncated) {
+        logWarn("receiveLine(): line exceeded cap=%zu (drained to newline)", cap);
+    }
+
+    return (int)i;
+}
