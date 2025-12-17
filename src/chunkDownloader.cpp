@@ -3,6 +3,11 @@
 #include "../inc/logger2.h"
 #include <cstdio>
 #include <cstring>
+#include <sys/types.h>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <algorithm>
 
 ChunkDownloader::ChunkDownloader(int chunkSize, int startPort, int endPort)
 : chunkSize_(chunkSize), startPort_(startPort), endPort_(endPort) {}
@@ -86,24 +91,73 @@ bool ChunkDownloader::download(const std::string& filename,
     FILE* out = fopen(outPath.c_str(), "wb+");
     if (!out) return false;
 
-    std::vector<char> buf((size_t)chunkSize_);
+    std::atomic<int> nextChunk(0);
+    std::atomic<bool> failed(false);
+    std::mutex fileMu;
 
-    for (int chunk = 0; chunk < totalChunks; ++chunk) {
-        bool got = false;
-        for (size_t a = 0; a < seeders.size(); ++a) {
-            int seederPort = seeders[(chunk + (int)a) % seeders.size()];
-            size_t n = 0;
-            if (fetchChunk(filename, seederPort, chunk, buf.data(), n)) {
-                fseek(out, (long)(chunk * chunkSize_), SEEK_SET);
-                fwrite(buf.data(), 1, n, out);
-                got = true;
+    int maxThreads = (int)seeders.size();
+    if (maxThreads < 1) maxThreads = 1;
+    maxThreads = std::min(maxThreads, 4); // cap for now to tune later
+
+    auto worker = [&](int workerId) {
+        std::vector<char> localBuf((size_t)chunkSize_);
+
+        while (!failed) {
+            int chunk = nextChunk.fetch_add(1);
+            if (chunk >= totalChunks) break;
+
+            bool got = false;
+
+            // try seeders 
+            for (size_t a = 0; a < seeders.size(); ++a) {
+                int seederPort = seeders[(chunk + (int)a) % (int)seeders.size()];
+
+                size_t n = 0;
+                if (fetchChunk(filename, seederPort, chunk, localBuf.data(), n)) {
+                    long long off = (long long)chunk * (long long)chunkSize_;
+
+                    {
+                        std::lock_guard<std::mutex> lock(fileMu);
+
+                        // current position (file-position indicator) of a file stream
+                        if (fseeko(out, (off_t)off, SEEK_SET) != 0) {
+                            logErr("fseeko failed at chunk %d (off=%lld)", chunk, off);
+                            failed = true;
+                            break;
+                        }
+
+                        if (fwrite(localBuf.data(), 1, n, out) != n) {
+                            logErr("fwrite failed at chunk %d", chunk);
+                            failed = true;
+                            break;
+                        }
+                    }
+
+                    got = true;
+                    break;
+                }
+            }
+
+            if (!got) {
+                logErr("failed to download chunk %d for %s", chunk, filename.c_str());
+                failed = true;
                 break;
             }
         }
-        if (!got) { fclose(out); return false; }
+    };
+
+    std::vector<std::thread> threads;
+    threads.reserve((size_t)maxThreads);
+    for (int i = 0; i < maxThreads; ++i) {
+        threads.emplace_back(worker, i);
     }
 
+    for (auto& t : threads) t.join();
+
     fclose(out);
+
+    if (failed) return false;
+
     logInfo("Download complete: %s", outPath.c_str());
     return true;
 }

@@ -167,3 +167,68 @@ Just drop the files and we’ll proceed.
 	4.	Error-proofing
 	•	If header is invalid or missing newline → treat as bad request
 	•	Add timeout later (so a dead peer doesn’t hang you)
+
+
+
+/////
+
+That “B Reliable receiving” note is basically saying:
+
+Your old receiveData() is not trustworthy for a protocol that mixes:
+	•	text headers ("<CHUNK> 5 32\n")
+	•	binary payloads (raw bytes of a file chunk)
+
+Because read() / recv() can return partial data anytime.
+
+What’s wrong with receiveData()?
+
+Your receiveData() does:
+	•	one read() call
+	•	returns whatever arrived right now
+	•	adds '\0' (fine for strings, bad mindset for binary)
+	•	can return less than what you expected even if connection is OK
+
+So if you ask for 32 bytes, you might get 21 now, then 11 later.
+
+What you need instead (the 2 safe receivers)
+
+1 receiveLine(out, cap) ✅ for headers
+
+Use this for things ending in \n, like:
+	•	<META> 1278129\n
+	•	<CHUNK> 10 32\n
+	•	<LIST>\n, FILE name\n, <END>\n
+
+It reads until newline (and drains extras if too long).
+
+2 receiveExact(buf, len) ✅ for payload
+
+Use this for raw chunk bytes (binary).
+It loops until it receives exactly len bytes (or fails).
+
+How downloader should use them
+
+When downloading a chunk:
+	1.	send GET filename chunkIndex\n
+	2.	read header using receiveLine(header, sizeof(header))
+	3.	parse how many bytes nbytes
+	4.	read payload using receiveExact(buf, nbytes)
+
+That removes the old:
+	•	+1 / -1 confusion
+	•	“partial chunk read”
+	•	truncation issues
+
+Why you saw this error earlier
+
+You saw:
+	•	receiveCString(): string exceeded cap=128 (truncated)
+because you were using a C-string terminated receiver ('\0') for something that is actually newline-based (\n). Those are different protocols.
+
+So: use receiveLine for protocol headers, not receiveCString.
+
+make -f bin/makefile
+./bin/seed_app
+
+
+   // current position (file-position indicator) of a file stream

@@ -62,19 +62,13 @@ bool clientSocket::sendData(const std::string& data) {
         logErr("sendData() called but socket fd is invalid");
         return false;
     }
-
-    ssize_t sent = ::send(client_fd, data.c_str(), data.size(), 0);
-    if (sent < 0) {
-        logErr("send() failed: %s", strerror(errno));
+    
+    if (!sendAll(data.data(), data.size())) {
+        logErr("sendData(): sendAll failed");
         return false;
     }
 
-    if ((size_t)sent != data.size()) {
-        logWarn("partial send: sent=%zd expected=%zu", sent, data.size());
-    } else {
-        logDbg("sent %zd bytes", sent);
-    }
-
+    logDbg("sent %zu bytes (sendAll)", data.size());
     return true;
 }
 
