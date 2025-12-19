@@ -18,9 +18,11 @@ private:
 
     long long getFileSizeBytes(const char* path);
     bool handleList(int clientFd, int port);
+    void handleClient(int clientFd, int port);
 
     std::atomic<bool> running_;
     std::thread thread_;
     int chunkSize_;
+    int listenFd_;
 };
 #endif

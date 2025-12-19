@@ -8,6 +8,12 @@
 PortAllocator::PortAllocator() : port_(-1), listenFd_(-1) {}
 PortAllocator::~PortAllocator() { release(); }
 
+int PortAllocator::takeFd() {
+    int fd = listenFd_;
+    listenFd_ = -1;    
+    return fd;
+}
+
 bool PortAllocator::claim(int startPort, int endPort) {
     for (int p = startPort; p <= endPort; ++p) {
         int fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -41,4 +47,6 @@ void PortAllocator::release() {
         listenFd_ = -1;
         port_ = -1;
     }
+
+    
 }

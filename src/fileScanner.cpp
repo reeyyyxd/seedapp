@@ -113,3 +113,16 @@ std::vector<FileEntry> FileScanner::scanOtherPorts(int myPort) const {
 
     return out;
 }
+
+long long FileScanner::localSize(int myPort, const std::string& filename) const {
+    std::string full = portDirectory(myPort) + "/" + filename;
+    struct stat st;
+    if (stat(full.c_str(), &st) != 0) return -1;
+    if (!S_ISREG(st.st_mode)) return -1;
+    return (long long)st.st_size;
+}
+
+bool FileScanner::existsLocal(int myPort, const std::string& filename, long long expectedSize) const {
+    long long sz = localSize(myPort, filename);
+    return (sz >= 0 && sz == expectedSize);
+}

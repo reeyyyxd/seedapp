@@ -12,6 +12,10 @@ public:
                   const std::vector<int>& seeders,
                   int myPort);
 
+    bool probeSize(const std::string& filename,
+               const std::vector<int>& seeders,
+               long long& outSize);
+
 private:
     bool fetchMeta(const std::string& filename, int seederPort, long long& outSize);
     bool fetchChunk(const std::string& filename, int seederPort, int chunkIndex,

@@ -16,6 +16,8 @@ public:
 
     std::vector<FileEntry> scanOtherPorts(int myPort) const;
     bool existsLocal(int myPort, const std::string& filename) const;
+    bool existsLocal(int myPort, const std::string& filename, long long expectedSize) const;
+    long long localSize(int myPort, const std::string& filename) const;
 
 private:
     std::string portDirectory(int port) const;

@@ -10,6 +10,8 @@ public:
     bool claim(int startPort, int endPort);
     int  port() const { return port_; }
     int  fd()   const { return listenFd_; }
+
+    int  takeFd();
     void release();
 
 private:

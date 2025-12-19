@@ -15,10 +15,11 @@ private:
     void shutdown();
 
     void showMenu() const;
-    int readInt() const;
+    int readInt(bool* eof) const; 
 
     void downloadFlow();
     void statusFlow();
+    void handleClient(int clientFd, int port);
 
 private:
     int startPort_;
@@ -26,6 +27,8 @@ private:
     int chunkSize_;
 
     int myPort_;
+    int listenFd_ = -1;
+    
 
     PortAllocator allocator_;
     SeedServer server_;

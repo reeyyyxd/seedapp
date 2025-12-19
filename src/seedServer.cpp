@@ -2,25 +2,40 @@
 #include "../inc/netIO.h"
 #include "../inc/serversocket.h"
 #include "../inc/logger2.h"
+
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
+SeedServer::SeedServer(int chunkSize)
+: running_(false), chunkSize_(chunkSize), listenFd_(-1) {}
 
-SeedServer::SeedServer(int chunkSize) : running_(false), chunkSize_(chunkSize) {}
 SeedServer::~SeedServer() { stop(); }
 
 bool SeedServer::start(int port, int boundListenFd) {
     if (running_) return true;
+
+    listenFd_ = boundListenFd;
     running_ = true;
+
     thread_ = std::thread(&SeedServer::serveLoop, this, port, boundListenFd);
     return true;
 }
 
 void SeedServer::stop() {
     if (!running_) return;
+
     running_ = false;
+    if (listenFd_ >= 0) {
+        ::shutdown(listenFd_, SHUT_RDWR);
+        ::close(listenFd_);
+        listenFd_ = -1;
+    }
+
     if (thread_.joinable()) thread_.join();
 }
 
@@ -31,11 +46,6 @@ long long SeedServer::getFileSizeBytes(const char* path) {
 }
 
 bool SeedServer::handleList(int clientFd, int port) {
-    // Reply format:
-    // <LIST>\n
-    // FILE <name>\n   (repeat)
-    // <END>\n
-
     const char* begin = "<LIST>\n";
     if (!NetIo::sendAll(clientFd, begin, strlen(begin))) return false;
 
@@ -67,60 +77,6 @@ bool SeedServer::handleList(int clientFd, int port) {
 
     const char* end = "<END>\n";
     return NetIo::sendAll(clientFd, end, strlen(end));
-}
-
-
-void SeedServer::serveLoop(int port, int listenFd) {
-    serversocket ss(port);
-    ss.setSocket(listenFd);
-
-    if (ss.listen_only() < 0) {
-        logErr("SeedServer listen failed on port %d", port);
-        running_ = false;
-        return;
-    }
-
-    logInfo("SeedServer listening on port %d", port);
-
-    sockaddr_in addr{};
-    socklen_t addrlen = sizeof(addr);
-
-    while (running_) {
-        int clientFd = ss.accept(addr, addrlen);
-        if (clientFd < 0) continue;
-
-        char line[256];
-        int n = NetIo::recvLine(clientFd, line, sizeof(line));
-        if (n <= 0) { ss.close_fd(clientFd); continue; }
-
-        size_t L = strlen(line);
-        if (L && line[L-1] == '\n') line[L-1] = '\0';
-
-        if (strcmp(line, "LIST") == 0) {
-            handleList(clientFd, port);
-            ss.close_fd(clientFd);
-            continue;
-        }
-
-        if (strncmp(line, "META ", 5) == 0) {
-            handleMeta(clientFd, port, line + 5);
-            ss.close_fd(clientFd);
-            continue;
-        }
-
-        if (strncmp(line, "GET ", 4) == 0) {
-            handleGet(clientFd, port, line);
-            ss.close_fd(clientFd);
-            continue;
-        }
-
-        const char* bad = "<BAD_REQUEST>\n";
-        NetIo::sendAll(clientFd, bad, strlen(bad));
-        ss.close_fd(clientFd);
-    }
-
-    ss.close_fd(ss.fd());
-    logInfo("SeedServer stopped (port %d)", port);
 }
 
 bool SeedServer::handleMeta(int clientFd, int port, const char* filename) {
@@ -175,7 +131,6 @@ bool SeedServer::handleGet(int clientFd, int port, const char* line) {
 
     fseek(fp, offset, SEEK_SET);
 
-    // fixed max chunkSize_
     std::string buf(chunkSize_, '\0');
     size_t rd = fread(&buf[0], 1, (size_t)chunkSize_, fp);
     fclose(fp);
@@ -184,4 +139,65 @@ bool SeedServer::handleGet(int clientFd, int port, const char* line) {
     snprintf(header, sizeof(header), "<CHUNK> %d %zu\n", chunkIndex, rd);
     if (!NetIo::sendAll(clientFd, header, strlen(header))) return false;
     return NetIo::sendAll(clientFd, buf.data(), rd);
+}
+
+void SeedServer::handleClient(int clientFd, int port) {
+    char line[256];
+    int n = NetIo::recvLine(clientFd, line, sizeof(line));
+    if (n <= 0) { ::close(clientFd); return; }
+
+    size_t L = strlen(line);
+    if (L && line[L - 1] == '\n') line[L - 1] = '\0';
+
+    if (strcmp(line, "LIST") == 0) {
+        handleList(clientFd, port);
+        ::close(clientFd);
+        return;
+    }
+
+    if (strncmp(line, "META ", 5) == 0) {
+        handleMeta(clientFd, port, line + 5);
+        ::close(clientFd);
+        return;
+    }
+
+    if (strncmp(line, "GET ", 4) == 0) {
+        handleGet(clientFd, port, line);
+        ::close(clientFd);
+        return;
+    }
+
+    const char* bad = "<BAD_REQUEST>\n";
+    NetIo::sendAll(clientFd, bad, strlen(bad));
+    ::close(clientFd);
+}
+
+void SeedServer::serveLoop(int port, int listenFd) {
+    serversocket ss(port);
+    ss.setSocket(listenFd);
+
+    if (ss.listen_only() < 0) {
+        logErr("SeedServer listen failed on port %d", port);
+        running_ = false;
+        return;
+    }
+
+    logInfo("SeedServer listening on port %d", port);
+
+    sockaddr_in addr{};
+    socklen_t addrlen = sizeof(addr);
+
+    while (running_) {
+        int clientFd = ss.accept(addr, addrlen);
+
+        if (clientFd < 0) {
+            if (!running_) break;
+            continue;
+        }
+
+        // ✅ multithread AFTER accept
+        std::thread(&SeedServer::handleClient, this, clientFd, port).detach();
+    }
+
+    logInfo("SeedServer stopped (port %d)", port);
 }

@@ -232,3 +232,102 @@ make -f bin/makefile
 
 
    // current position (file-position indicator) of a file stream
+
+
+
+//////////
+12-18-25
+
+- the many the seeds detected, the faster the download speed
+
+- in the seedServer.cpp ==DONE
+	- something2x multithread in after accept
+	while(running) = spawn thread
+
+- seedApp.cpp. == DONE
+	-if file already exists (check file size or reference)
+	-scanner_.existslocal
+
+-chunkdownloader  == DONE
+	main thread(always separate) = done
+
+	download complete (have a verifier)
+
+
+
+// this is for the astah uml
+-getport
+	-always separate
+	- get thread
+
+Super concern:
+- if no active ports, how is it seen? - maybe its the other device fault (DONE)
+- weird behavior on input error or EOF - DONE
+- took too long to exit process - DONE
+
+
+
+
+
+//threading in seedServer
+
+In your SeedServer, the “thread” is what lets the server keep listening for network requests in
+the background while your main program continues showing the menu and accepting user input.
+
+What happens in your code
+	•	SeedServer::start(...) does this:
+	•	sets running_ = true
+	•	creates a new thread:
+	thread_ = std::thread(&SeedServer::serveLoop, this, port, boundListenFd);
+
+		•	That means serveLoop() runs on a separate thread.
+
+	•	The serveLoop() thread does the server job:
+	•	listen()
+	•	accept() client connections
+	•	read command line (LIST, META, GET)
+	•	send responses (file list, metadata, chunks)
+	•	Meanwhile, the main thread runs your SeedApp::run() loop:
+	•	prints menu
+	•	reads choices
+	•	calls downloader / scanner, etc.
+
+Why you need it
+
+If you didn’t use a separate thread:
+	•	serveLoop() would block forever on accept()
+	•	your menu would freeze and you couldn’t type options
+
+When stopping
+
+SeedServer::stop():
+	•	sets running_ = false
+	•	shuts down the listening socket (so accept() unblocks)
+	•	join() waits for the server thread to finish cleanly
+
+So: thread = “server runs in parallel so your app stays interactive.”
+
+///// verification
+
+Yep. The “verification” I added is basically:
+	1.	Ask the network what the real file size is (from any seeder)
+
+	•	That’s ChunkDownloader::probeSize(...)
+	•	Internally it just calls your existing fetchMeta() against the seeders until one replies with <META> <size>.
+
+	2.	Before downloading, check if you already have the file locally AND if it’s complete
+
+	•	Old check was: “does a file with that name exist?” (existsLocal(myPort, filename))
+	•	New check is: “does it exist AND its size matches expectedSize?”
+	•	That’s FileScanner::existsLocal(myPort, filename, expectedSize)
+	•	Internally it calls localSize() (stat) and compares.
+
+So now the flow becomes:
+	•	probeSize() → expectedSize
+	•	if local file exists AND size == expectedSize → skip download
+	•	if local file exists but size != expectedSize → treat as incomplete/corrupt and re-download (or you can delete/overwrite)
+
+Why this matters:
+	•	If a previous download failed halfway, you might still have a file on disk.
+	•	The old logic would incorrectly say “file already exists” and refuse to download again.
+	•	With size verification, you only block the download when the file looks complete.

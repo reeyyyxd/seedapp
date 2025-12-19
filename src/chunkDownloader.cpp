@@ -161,3 +161,13 @@ bool ChunkDownloader::download(const std::string& filename,
     logInfo("Download complete: %s", outPath.c_str());
     return true;
 }
+
+bool ChunkDownloader::probeSize(const std::string& filename,
+                                const std::vector<int>& seeders,
+                                long long& outSize) {
+    outSize = -1;
+    for (int p : seeders) {
+        if (fetchMeta(filename, p, outSize)) return true;
+    }
+    return false;
+}

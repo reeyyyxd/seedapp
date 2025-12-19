@@ -13,9 +13,13 @@ SeedApp::SeedApp(int startPort, int endPort, int chunkSize)
   scanner_(startPort, endPort),
   downloader_(chunkSize, startPort, endPort) {}
 
-int SeedApp::readInt() const {
+int SeedApp::readInt(bool* eof) const {
     char buf[64];
-    if (!fgets(buf, sizeof(buf), stdin)) return -1;
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        if (eof) *eof = true;  
+        return -1;
+    }
+    if (eof) *eof = false;
 
     size_t len = strlen(buf);
     if (len && buf[len - 1] == '\n') buf[len - 1] = '\0';
@@ -47,8 +51,9 @@ bool SeedApp::boot() {
     printf("Found port %d.\n", myPort_);
     printf("Listening at port %d.\n\n", myPort_);
 
-    server_.start(myPort_, allocator_.fd());
-    usleep(100000);
+    int listenFd = allocator_.takeFd();
+    server_.start(myPort_, listenFd);
+
     return true;
 }
 
@@ -82,15 +87,44 @@ void SeedApp::downloadFlow() {
     printf("Select file ID: ");
     fflush(stdout);
 
-    int choice = readInt();
-    if (choice == 0) { printf("\nBack to menu.\n\n"); return; }
-    if (choice < 1 || choice > (int)files.size()) { printf("\nInvalid file ID.\n\n"); return; }
+    bool eof = false;
+    int choice = readInt(&eof);
+
+    if (eof) {
+        printf("\nEOF detected. Back to menu.\n\n");
+        return;
+    }
+    if (choice == 0) {
+        printf("\nBack to menu.\n\n");
+        return;
+    }
+    if (choice < 1 || choice > (int)files.size()) {
+        printf("\nInvalid file ID.\n\n");
+        return;
+    }
 
     const FileEntry& selected = files[choice - 1];
 
+    long long remoteSize = -1;
+    bool metaOk = downloader_.probeSize(selected.filename, selected.seeders, remoteSize);
+
     if (scanner_.existsLocal(myPort_, selected.filename)) {
-        printf("\nThe file already exists.\n\n");
-        return;
+        if (metaOk && remoteSize >= 0) {
+            long long localSz = scanner_.localSize(myPort_, selected.filename);
+
+            if (localSz == remoteSize) {
+                printf("\nThe file already exists (complete).\n\n");
+                return;
+            }
+
+            printf("\nFile exists but incomplete/corrupt (local=%lld, remote=%lld). Re-downloading...\n\n",
+                   localSz, remoteSize);
+            // continue to download ("wb+" to overwrite)
+        } else {
+            // cant verify size, keep old behavior
+            printf("\nThe file already exists.\n\n");
+            return;
+        }
     }
 
     printf("\nLocating seeders....Found [%d] Seeder%s.\n",
@@ -104,15 +138,22 @@ void SeedApp::downloadFlow() {
 int SeedApp::run() {
     if (!boot()) return 1;
 
-    while (true) {
-        showMenu();
-        int choice = readInt();
+   while (true) {
+    showMenu();
 
-        if (choice == 1) downloadFlow();
-        else if (choice == 2) statusFlow();
-        else if (choice == 3) break;
-        else printf("\nInvalid option. Please enter 1, 2, or 3.\n\n");
+    bool eof = false;
+    int choice = readInt(&eof);
+
+    if (eof) { 
+        printf("\nEOF detected. Exiting...\n");
+        break;
     }
+
+    if (choice == 1) downloadFlow();
+    else if (choice == 2) statusFlow();
+    else if (choice == 3) break;
+    else printf("\nInvalid option. Please enter 1, 2, or 3.\n\n");
+}
 
     printf("\nExiting...\n");
     shutdown();
