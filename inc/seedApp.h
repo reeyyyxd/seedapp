@@ -1,6 +1,10 @@
 #ifndef SEED_APP_H
 #define SEED_APP_H
 
+#include <thread>
+#include <mutex>
+#include <chrono>
+
 #include "portAllocator.h"
 #include "seedServer.h"
 #include "fileScanner.h"
@@ -20,6 +24,13 @@ private:
     void downloadFlow();
     void statusFlow();
     void handleClient(int clientFd, int port);
+
+    
+    std::thread dlThread_;
+    std::mutex  dlMu_;
+    std::string dlFile_;
+    std::chrono::steady_clock::time_point dlStart_;
+    DownloadProgress dlProg_;
 
 private:
     int startPort_;

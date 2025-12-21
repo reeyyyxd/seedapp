@@ -58,13 +58,47 @@ bool SeedApp::boot() {
 }
 
 void SeedApp::shutdown() {
+    dlProg_.cancel = true; // request cancel
     server_.stop();
     allocator_.release();
 }
 
 void SeedApp::statusFlow() {
-    printf("\nSoon to open\n\n");
+    if (!dlProg_.active && !dlProg_.success && !dlProg_.failed) {
+        printf("\nNo download activity.\n\n");
+        return;
+    }
+
+    std::string fname;
+    std::chrono::steady_clock::time_point start;
+    {
+        std::lock_guard<std::mutex> lock(dlMu_);
+        fname = dlFile_;
+        start = dlStart_;
+    }
+
+    long long total = dlProg_.totalBytes.load();
+    long long done  = dlProg_.doneBytes.load();
+    int tChunks = dlProg_.totalChunks.load();
+    int dChunks = dlProg_.doneChunks.load();
+
+    double pct = (total > 0) ? (100.0 * (double)done / (double)total) : 0.0;
+
+    auto now = std::chrono::steady_clock::now();
+    double secs = std::chrono::duration<double>(now - start).count();
+    double speed = (secs > 0.0) ? ((double)done / secs) : 0.0; // bytes/sec
+
+    printf("\nDownload Status\n");
+    printf("File: %s\n", fname.c_str());
+    printf("Progress: %lld / %lld bytes (%.2f%%)\n", done, total, pct);
+    printf("Chunks: %d / %d\n", dChunks, tChunks);
+    printf("Speed: %.2f KB/s\n", speed / 1024.0);
+
+    if (dlProg_.active) printf("State: DOWNLOADING\n\n");
+    else if (dlProg_.success) printf("State: COMPLETED\n\n");
+    else if (dlProg_.failed)  printf("State: FAILED\n\n");
 }
+
 
 void SeedApp::downloadFlow() {
     printf("\nScanning for available files...\n\n");
@@ -103,11 +137,20 @@ void SeedApp::downloadFlow() {
         return;
     }
 
-    const FileEntry& selected = files[choice - 1];
+    // Copy selected entry (so we can safely capture it in a thread)
+    FileEntry selected = files[choice - 1];
 
+    // If a download is already running, don't start another
+    if (dlProg_.active.load()) {
+        printf("\nA download is already running.\n\n");
+        return;
+    }
+
+    // Probe remote size (best-effort)
     long long remoteSize = -1;
     bool metaOk = downloader_.probeSize(selected.filename, selected.seeders, remoteSize);
 
+    // If local exists, verify vs remote size if possible
     if (scanner_.existsLocal(myPort_, selected.filename)) {
         if (metaOk && remoteSize >= 0) {
             long long localSz = scanner_.localSize(myPort_, selected.filename);
@@ -119,9 +162,8 @@ void SeedApp::downloadFlow() {
 
             printf("\nFile exists but incomplete/corrupt (local=%lld, remote=%lld). Re-downloading...\n\n",
                    localSz, remoteSize);
-            // continue to download ("wb+" to overwrite)
+            // continue, downloader will overwrite (wb+ truncates)
         } else {
-            // cant verify size, keep old behavior
             printf("\nThe file already exists.\n\n");
             return;
         }
@@ -131,9 +173,32 @@ void SeedApp::downloadFlow() {
            (int)selected.seeders.size(),
            selected.seeders.size() > 1 ? "s" : "");
 
-    bool ok = downloader_.download(selected.filename, selected.seeders, myPort_);
-    printf(ok ? "Download finished.\n\n" : "Download failed.\n\n");
+    // Set UI/status fields
+    {
+        std::lock_guard<std::mutex> lock(dlMu_);
+        dlFile_  = selected.filename;
+        dlStart_ = std::chrono::steady_clock::now();
+    }
+
+    // Reset progress safely (no struct assignment)
+    dlProg_.reset();
+    dlProg_.active.store(true);
+
+    // Start download in background
+    dlThread_ = std::thread([this, selected]() mutable {
+        bool ok = downloader_.download(selected.filename, selected.seeders, myPort_, &dlProg_);
+
+        dlProg_.active.store(false);
+        if (ok) dlProg_.success.store(true);
+        else    dlProg_.failed.store(true);
+    });
+
+    dlThread_.detach();
+
+    printf("\nDownload started in background.\n\n");
 }
+
+
 
 int SeedApp::run() {
     if (!boot()) return 1;

@@ -1,4 +1,4 @@
-Here’s a clean checklist of what you’ve already done vs what’s still missing / not solid yet for your seed app (C++11, localhost network download, 32B chunks).
+	Here’s a clean checklist of what you’ve already done vs what’s still missing / not solid yet for your seed app (C++11, localhost network download, 32B chunks).
 
 --Done already
 
@@ -331,3 +331,105 @@ Why this matters:
 	•	If a previous download failed halfway, you might still have a file on disk.
 	•	The old logic would incorrectly say “file already exists” and refuse to download again.
 	•	With size verification, you only block the download when the file looks complete.
+
+
+
+
+
+
+
+
+
+////
+
+2) Real “more seeders = faster”
+
+Right now: threads help, but speed is still limited by:
+	•	tiny chunk size
+	•	connecting per chunk
+	•	single FILE* + mutex
+
+To make it actually fast, you’ll eventually want at least one of these:
+	•	Bigger chunk size (ex: 16KB–256KB, not 32–512 bytes)
+	•	Persistent connections (don’t reconnect every chunk)
+	•	No file mutex bottleneck (best: pwrite(), or each thread writes to a separate temp file then merge)	
+
+/////
+
+✅ Already done (from our last steps)
+	•	Network file scan via LIST (SeedServer + FileScanner uses network instead of reading other folders)
+	•	Reliable receive (receiveLine for headers + receiveExact for payload)
+	•	Cleaner exit / EOF handling in SeedApp::readInt(&eof)
+	•	Graceful server stop (shutdown/close listen fd so accept() unblocks)
+	•	“File exists” verification using local size vs expected size (probe META + compare)
+
+⸻
+
+🔥 What’s left (next priorities)
+
+1) Download status (Menu option 2)
+
+You need a way to track:
+	•	totalChunks
+	•	chunksDone
+	•	chunksFailed / retries
+	•	current speed (optional)
+	•	state: idle / downloading / complete / failed
+
+Implementation idea: store a shared DownloadState in ChunkDownloader (atomic counters), and expose a getter so SeedApp::statusFlow() can print it.
+
+⸻
+
+2) Real “more seeders = faster”
+
+Right now: threads help, but speed is still limited by:
+	•	tiny chunk size
+	•	connecting per chunk
+	•	single FILE* + mutex
+
+To make it actually fast, you’ll eventually want at least one of these:
+	•	Bigger chunk size (ex: 16KB–256KB, not 32–512 bytes)
+	•	Persistent connections (don’t reconnect every chunk)
+	•	No file mutex bottleneck (best: pwrite(), or each thread writes to a separate temp file then merge)
+
+⸻
+
+3) Verifier after download completes (stronger than size check)
+
+Size-match is good, but you can add:
+	•	hash verifier (CRC32/SHA256) OR
+	•	chunk checksum in protocol (<CHUNK> idx bytes crc)
+
+This makes “download complete” trustworthy.
+
+⸻
+
+4) Seeder “health” and retry policy
+
+So one slow/dead port doesn’t kill the whole download:
+	•	mark seeder as bad after N failures
+	•	per-chunk retry count
+	•	fallback to other seeder quickly
+
+⸻
+
+5) Active ports visibility (your concern: “if no active ports, how is it seen?”)
+
+Right now scan relies on LIST working.
+You can add:
+	•	quick “PING” command
+	•	timeout handling (connect/read timeouts)
+	•	show “no active peers” vs “active peers but no files”
+
+⸻
+
+6) Input robustness polish
+
+You fixed EOF, but remaining edge cases:
+	•	non-numeric input: keep prompting without weird loops
+	•	very large numbers / whitespace / empty line
+
+⸻
+
+If you want, we can tackle these in this order:
+(1) Download status → (5) Active ports clarity → (2) Speed upgrades.
