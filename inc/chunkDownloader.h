@@ -12,9 +12,9 @@ struct DownloadProgress {
     std::atomic<int> doneChunks{0};
 
     std::atomic<bool> active{false};
+    std::atomic<bool> pending{false};  
     std::atomic<bool> success{false};
     std::atomic<bool> failed{false};
-    std::atomic<bool> cancel{false};
 
     void reset() {
         totalBytes.store(0);
@@ -22,9 +22,9 @@ struct DownloadProgress {
         totalChunks.store(0);
         doneChunks.store(0);
         active.store(false);
+        pending.store(false);   
         success.store(false);
         failed.store(false);
-        cancel.store(false);
     }
 };
 
@@ -36,7 +36,6 @@ public:
                   const std::vector<int>& seeders,
                   int myPort);
 
-    // NEW: download with progress reporting
     bool download(const std::string& filename,
                   const std::vector<int>& seeders,
                   int myPort,

@@ -195,7 +195,6 @@ void SeedServer::serveLoop(int port, int listenFd) {
             continue;
         }
 
-        // ✅ multithread AFTER accept
         std::thread(&SeedServer::handleClient, this, clientFd, port).detach();
     }
 

@@ -2,7 +2,7 @@ CXX      := g++
 CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -O2 -pthread -Iinc
 LDFLAGS  := -pthread
 
-TARGET   := bin/seed_app
+TARGET   := seed_app
 
 SRCS     := $(wildcard src/*.cpp)
 OBJS     := $(patsubst src/%.cpp, build/%.o, $(SRCS))
@@ -13,7 +13,7 @@ DEPS     := $(OBJS:.o=.d)
 all: dirs $(TARGET)
 
 dirs:
-	@mkdir -p build bin
+	@mkdir -p build
 
 $(TARGET): $(OBJS)
 	$(CXX) $(OBJS) -o $@ $(LDFLAGS)

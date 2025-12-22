@@ -11,7 +11,7 @@ clientSocket::clientSocket() : client_fd(-1) {
         logErr("socket() failed: %s", strerror(errno));
         client_fd = -1;
     } else {
-        logDbg("socket() ok, fd=%d", client_fd);
+        // logDbg("socket() ok, fd=%d", client_fd);
     }
 }
 
@@ -40,11 +40,11 @@ bool clientSocket::connectServer(const std::string& ip, int port) {
     }
 
     if (::connect(client_fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        logErr("connect() to %s:%d failed: %s", ip.c_str(), port, strerror(errno));
+        // logErr("connect() to %s:%d failed: %s", ip.c_str(), port, strerror(errno));
         return false;
     }
 
-    logInfo("connected to %s:%d (fd=%d)", ip.c_str(), port, client_fd);
+    // logInfo("connected to %s:%d (fd=%d)", ip.c_str(), port, client_fd);
     return true;
 }
 
@@ -53,7 +53,7 @@ void clientSocket::closeConn() {
         int fd = client_fd;
         ::close(client_fd);
         client_fd = -1;
-        logInfo("closed client socket fd=%d", fd);
+        // logInfo("closed client socket fd=%d", fd);
     }
 }
 
@@ -68,7 +68,7 @@ bool clientSocket::sendData(const std::string& data) {
         return false;
     }
 
-    logDbg("sent %zu bytes (sendAll)", data.size());
+    // logDbg("sent %zu bytes (sendAll)", data.size());
     return true;
 }
 

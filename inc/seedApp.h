@@ -4,6 +4,9 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
+#include <vector>
+#include <memory>
+#include <string>
 
 #include "portAllocator.h"
 #include "seedServer.h"
@@ -11,26 +14,34 @@
 #include "chunkDownloader.h"
 
 class SeedApp {
+
+private:
+    struct DownloadJob {
+        std::string filename;
+        std::vector<int> seeders;
+        std::chrono::steady_clock::time_point start;
+        DownloadProgress progress;
+        std::thread worker;
+    };
+
 public:
     SeedApp(int startPort, int endPort, int chunkSize);
-    int run(); 
+    int run();
+
 private:
     bool boot();
     void shutdown();
 
     void showMenu() const;
-    int readInt(bool* eof) const; 
+    int readInt(bool* eof) const;
 
     void downloadFlow();
     void statusFlow();
     void handleClient(int clientFd, int port);
 
-    
-    std::thread dlThread_;
-    std::mutex  dlMu_;
-    std::string dlFile_;
-    std::chrono::steady_clock::time_point dlStart_;
-    DownloadProgress dlProg_;
+private:
+    std::mutex jobsMu_;
+    std::vector<std::unique_ptr<DownloadJob>> jobs_;
 
 private:
     int startPort_;
@@ -39,7 +50,6 @@ private:
 
     int myPort_;
     int listenFd_ = -1;
-    
 
     PortAllocator allocator_;
     SeedServer server_;

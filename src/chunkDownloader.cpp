@@ -9,6 +9,7 @@
 #include <mutex>
 #include <algorithm>
 
+
 ChunkDownloader::ChunkDownloader(int chunkSize, int startPort, int endPort)
 : chunkSize_(chunkSize), startPort_(startPort), endPort_(endPort) {}
 
@@ -84,7 +85,6 @@ bool ChunkDownloader::download(const std::string& filename,
         prog->active = true;
         prog->success = false;
         prog->failed = false;
-        prog->cancel = false;
         prog->doneBytes = 0;
         prog->doneChunks = 0;
     }
@@ -119,13 +119,6 @@ bool ChunkDownloader::download(const std::string& filename,
     std::vector<char> buf((size_t)chunkSize_);
 
     for (int chunk = 0; chunk < totalChunks; ++chunk) {
-        if (prog && prog->cancel) {
-            logWarn("Download cancelled: %s", filename.c_str());
-            fclose(out);
-            if (prog) { prog->failed = true; prog->active = false; }
-            return false;
-        }
-
         bool got = false;
         for (size_t a = 0; a < seeders.size(); ++a) {
             int seederPort = seeders[(chunk + (int)a) % (int)seeders.size()];
@@ -152,15 +145,23 @@ bool ChunkDownloader::download(const std::string& filename,
                     prog->doneChunks += 1;
                 }
 
+                if (prog) {
+                    prog->pending.store(false);
+                    prog->active.store(true);
+                }
+
                 got = true;
                 break;
             }
         }
 
         if (!got) {
-            fclose(out);
-            if (prog) { prog->failed = true; prog->active = false; }
-            return false;
+            if (prog) {
+                prog->active.store(false);
+                prog->pending.store(true);
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            continue;
         }
     }
 
