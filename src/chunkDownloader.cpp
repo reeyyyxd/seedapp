@@ -81,98 +81,110 @@ bool ChunkDownloader::download(const std::string& filename,
                                DownloadProgress* prog) {
     if (seeders.empty()) return false;
 
+    // --- INIT PROGRESS ---
     if (prog) {
-        prog->active = true;
-        prog->success = false;
-        prog->failed = false;
-        prog->doneBytes = 0;
-        prog->doneChunks = 0;
+        prog->reset();
+        prog->active.store(true);
     }
 
+    // --- FETCH META ---
     long long size = -1;
     bool metaOk = false;
-    for (size_t i = 0; i < seeders.size(); ++i) {
-        if (fetchMeta(filename, seeders[i], size)) { metaOk = true; break; }
+    for (int p : seeders) {
+        if (fetchMeta(filename, p, size)) {
+            metaOk = true;
+            break;
+        }
     }
+
     if (!metaOk || size < 0) {
-        if (prog) { prog->failed = true; prog->active = false; }
-        logErr("META failed for %s", filename.c_str());
+        if (prog) {
+            prog->failed.store(true);
+            prog->active.store(false);
+        }
         return false;
     }
 
-    int totalChunks = (int)((size + (chunkSize_ - 1)) / chunkSize_);
+    const int totalChunks =
+        static_cast<int>((size + chunkSize_ - 1) / chunkSize_);
+
     if (prog) {
-        prog->totalBytes = size;
-        prog->totalChunks = totalChunks;
+        prog->totalBytes.store(size);
+        prog->totalChunks.store(totalChunks);
     }
 
-    logInfo("Downloading '%s' size=%lld chunks=%d seeders=%d",
-            filename.c_str(), size, totalChunks, (int)seeders.size());
-
+    // --- OPEN OUTPUT FILE ---
     std::string outPath = portDirectory(myPort) + "/" + filename;
     FILE* out = fopen(outPath.c_str(), "wb+");
     if (!out) {
-        if (prog) { prog->failed = true; prog->active = false; }
+        if (prog) {
+            prog->failed.store(true);
+            prog->active.store(false);
+        }
         return false;
     }
 
-    std::vector<char> buf((size_t)chunkSize_);
+    std::mutex fileMu;                 // protect fseeko + fwrite
+    std::atomic<int> nextChunk{0};     // shared work queue
+    std::atomic<bool> anyFailed{false};
 
-    for (int chunk = 0; chunk < totalChunks; ++chunk) {
-        bool got = false;
-        for (size_t a = 0; a < seeders.size(); ++a) {
-            int seederPort = seeders[(chunk + (int)a) % (int)seeders.size()];
+    // --- WORKER FUNCTION ---
+    auto worker = [&](int seederPort) {
+        std::vector<char> buf(chunkSize_);
+
+        while (true) {
+            int chunk = nextChunk.fetch_add(1);
+            if (chunk >= totalChunks) break;
+
             size_t n = 0;
-
-            if (fetchChunk(filename, seederPort, chunk, buf.data(), n)) {
-                long long off = (long long)chunk * (long long)chunkSize_;
-                if (fseeko(out, (off_t)off, SEEK_SET) != 0) {
-                    logErr("fseeko failed at chunk %d (off=%lld)", chunk, off);
-                    fclose(out);
-                    if (prog) { prog->failed = true; prog->active = false; }
-                    return false;
-                }
-
-                if (fwrite(buf.data(), 1, n, out) != n) {
-                    logErr("fwrite failed at chunk %d", chunk);
-                    fclose(out);
-                    if (prog) { prog->failed = true; prog->active = false; }
-                    return false;
-                }
-
-                if (prog) {
-                    prog->doneBytes += (long long)n;
-                    prog->doneChunks += 1;
-                }
-
-                if (prog) {
-                    prog->pending.store(false);
-                    prog->active.store(true);
-                }
-
-                got = true;
-                break;
-            }
-        }
-
-        if (!got) {
-            if (prog) {
-                prog->active.store(false);
+            if (!fetchChunk(filename, seederPort, chunk, buf.data(), n)) {
+                // Seeder temporarily unavailable → retry later
                 prog->pending.store(true);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                nextChunk.fetch_sub(1); // put chunk back
+                continue;
             }
-            std::this_thread::sleep_for(std::chrono::seconds(10));
-            continue;
+
+            long long offset =
+                static_cast<long long>(chunk) * chunkSize_;
+
+            {
+                std::lock_guard<std::mutex> lock(fileMu);
+                fseeko(out, offset, SEEK_SET);
+                fwrite(buf.data(), 1, n, out);
+            }
+
+            if (prog) {
+                prog->pending.store(false);
+                prog->doneBytes.fetch_add(n);
+                prog->doneChunks.fetch_add(1);
+            }
         }
+    };
+
+    // --- SPAWN THREADS ---
+    std::vector<std::thread> threads;
+    for (int p : seeders) {
+        threads.emplace_back(worker, p);
+    }
+
+    // --- WAIT ---
+    for (auto& t : threads) {
+        t.join();
     }
 
     fclose(out);
-    logInfo("Download complete: %s", outPath.c_str());
 
+    // --- FINAL STATE ---
     if (prog) {
-        prog->success = true;
-        prog->active = false;
+        prog->active.store(false);
+        if (prog->doneChunks.load() == totalChunks)
+            prog->success.store(true);
+        else
+            prog->failed.store(true);
     }
-    return true;
+
+    return prog && prog->success.load();
 }
 
 bool ChunkDownloader::probeSize(const std::string& filename,

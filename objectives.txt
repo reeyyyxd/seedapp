@@ -433,3 +433,18 @@ You fixed EOF, but remaining edge cases:
 
 If you want, we can tackle these in this order:
 (1) Download status → (5) Active ports clarity → (2) Speed upgrades.
+
+
+
+
+Each job has:
+	•	its own thread
+	•	its own progress
+	•	its own state
+
+Result
+
+✔ Multiple downloads at once
+✔ Independent pending states
+✔ Accurate per-file status
+
