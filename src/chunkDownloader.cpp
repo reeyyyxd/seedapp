@@ -150,7 +150,7 @@ bool ChunkDownloader::download(const std::string& filename,
 
             {
                 std::lock_guard<std::mutex> lock(fileMu);
-                fseeko(out, offset, SEEK_SET);
+                fseek(out, offset, SEEK_SET);
                 fwrite(buf.data(), 1, n, out);
             }
 

@@ -288,7 +288,7 @@ void SeedApp::downloadFlow() {
 }
 
 int SeedApp::run() {
-    if (!boot()) return 1;
+        if (!boot()) return 1;
 
     while (true) {
         showMenu();
