@@ -5,6 +5,15 @@
 #include <vector>
 #include <atomic>
 
+
+enum class FetchCode {
+    OK = 0,
+    TEMP_FAIL,
+    FILE_NOT_FOUND,
+    RANGE_OR_BAD
+};
+
+
 struct DownloadProgress {
     std::atomic<long long> totalBytes{0};
     std::atomic<long long> doneBytes{0};
@@ -48,7 +57,7 @@ public:
 private:
     bool fetchMeta(const std::string& filename, int seederPort, long long& outSize);
     bool fetchChunk(const std::string& filename, int seederPort, int chunkIndex,
-                    char* outBuf, size_t& outN);
+                char* outBuf, size_t& outN, int* outCode);
 
     std::string portDirectory(int port) const;
 

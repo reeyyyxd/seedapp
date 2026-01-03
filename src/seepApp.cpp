@@ -9,7 +9,9 @@
 //this for fancy2x
 static void clearScreen() {
     printf("\033[2J\033[H");
+    fflush(stdout);
 }
+
 
 static struct termios origTerm;
 
@@ -107,71 +109,60 @@ void SeedApp::shutdown() {
 void SeedApp::statusFlow() {
     enableRawMode();
 
-    bool first = true;
-    size_t lastLines = 0;
 
     while (true) {
-        const size_t LINES_PER_JOB = 6;
-
-        if (first) {
-            printf("\x1b[2J\x1b[H");
-            printf("Download Status (3 sec interval)\n");
-            printf("Press [0] to return to menu\n\n");
-            fflush(stdout);
-        } else {
-            if (lastLines > 0) {
-                printf("\x1b[%zuA", lastLines);
-            }
-        }
-        size_t linesPrinted = 0;
+        clearScreen();
+        printf("Download Status\n");
+        printf("Press [0] to return to menu\n\n");
 
         {
             std::lock_guard<std::mutex> lock(jobsMu_);
             if (jobs_.empty()) {
-                printf("\x1b[KNo download activity.\n\n");
-                linesPrinted += 2; 
+                printf("No download activity.\n\n");
             } else {
                 for (size_t i = 0; i < jobs_.size(); ++i) {
                     auto& j = jobs_[i];
+
                     long long total   = j->progress.totalBytes.load();
                     long long done    = j->progress.doneBytes.load();
                     int tChunks       = j->progress.totalChunks.load();
                     int dChunks       = j->progress.doneChunks.load();
-                    double pct        = (total > 0) ? (100.0 * (double)done / (double)total) : 0.0;
-                    auto now          = std::chrono::steady_clock::now();
-                    double secs       = std::chrono::duration<double>(now - j->start).count();
-                    double speed      = (secs > 0.0) ? ((double)done / secs) / 1024.0 : 0.0;
 
-                    printf("\x1b[K[%zu] %s\n", i + 1, j->filename.c_str());
-                    printf("\x1b[K Progress : %lld / %lld bytes (%.2f%%)\n", done, total, pct);
-                    printf("\x1b[K Chunks   : %d / %d\n", dChunks, tChunks);
-                    printf("\x1b[K Speed    : %.2f KB/s\n", speed);
+                    double pct = (total > 0) ? (100.0 * (double)done / (double)total) : 0.0;
 
-                    if (j->progress.active)
-                        printf("\x1b[K State    : DOWNLOADING\n");
-                    else if (j->progress.pending)
-                        printf("\x1b[K State    : PENDING (waiting for seeders)\n");
-                    else if (j->progress.success)
-                        printf("\x1b[K State    : COMPLETED\n");
+                    auto now = std::chrono::steady_clock::now();
+                    double dt = std::chrono::duration<double>(now - j->lastTick).count();
+                    long long delta = done - j->lastDoneBytes;
+                    double speed = (dt > 0.0) ? ((double)delta / dt) / 1024.0 : 0.0;
+                    j->lastTick = now;
+                    j->lastDoneBytes = done;
+
+                    printf("[%zu] %s\n", i + 1, j->filename.c_str());
+                    printf(" Progress : %lld / %lld bytes (%.2f%%)\n", done, total, pct);
+                    printf(" Chunks   : %d / %d\n", dChunks, tChunks);
+                    printf(" Speed    : %.2f KB/s\n", speed);
+
+                    if (j->progress.success)
+                        printf(" State    : COMPLETED\n");
                     else if (j->progress.failed)
-                        printf("\x1b[K State    : FAILED\n");
+                        printf(" State    : FAILED\n");
+                    else if (j->progress.pending)
+                        printf(" State    : LOOKING FOR SEEDERS...\n");
+                    else if (j->progress.active)
+                        printf(" State    : DOWNLOADING\n");
 
-                    printf("\x1b[K\n");
-
-                    linesPrinted += LINES_PER_JOB;
+                    printf("\n");
                 }
             }
         }
-        const size_t HEADER_LINES = 3;
-        lastLines = HEADER_LINES + linesPrinted;
-        first = false;
 
         fflush(stdout);
+
         for (int i = 0; i < 30; ++i) {
             char c;
             if (keyPressed(c) && c == '0') {
                 disableRawMode();
-                printf("\x1b[2J\x1b[H"); 
+                clearScreen();
                 fflush(stdout);
                 return;
             }
@@ -260,6 +251,8 @@ void SeedApp::downloadFlow() {
     job->filename = selected.filename;
     job->seeders  = selected.seeders;
     job->start    = std::chrono::steady_clock::now();
+    job->lastDoneBytes = 0;
+    job->lastTick = job->start;
     job->progress.reset();
     job->progress.active.store(true);
 

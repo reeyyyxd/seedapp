@@ -9,9 +9,8 @@
 #include <mutex>
 #include <algorithm>
 
-
 ChunkDownloader::ChunkDownloader(int chunkSize, int startPort, int endPort)
-: chunkSize_(chunkSize), startPort_(startPort), endPort_(endPort) {}
+    : chunkSize_(chunkSize), startPort_(startPort), endPort_(endPort) {}
 
 std::string ChunkDownloader::portDirectory(int port) const {
     char path[256];
@@ -27,7 +26,7 @@ bool ChunkDownloader::fetchMeta(const std::string& filename, int seederPort, lon
     if (!cs.sendData(req)) return false;
 
     char line[128];
-    int n = cs.receiveLine(line, sizeof(line));  
+    int n = cs.receiveLine(line, sizeof(line));
     if (n <= 0) return false;
 
     if (!strncmp(line, "<FILE_NOT_FOUND>", 15)) return false;
@@ -40,9 +39,16 @@ bool ChunkDownloader::fetchMeta(const std::string& filename, int seederPort, lon
     return false;
 }
 
-bool ChunkDownloader::fetchChunk(const std::string& filename, int seederPort, int chunkIndex,
-                                 char* outBuf, size_t& outN) {
+bool ChunkDownloader::fetchChunk(
+    const std::string& filename,
+    int seederPort,
+    int chunkIndex,
+    char* outBuf,
+    size_t& outN,
+    int* outCode
+) {
     outN = 0;
+    if (outCode) *outCode = 1; // TEMP_FAIL default
 
     clientSocket cs;
     if (!cs.connectServer("127.0.0.1", seederPort)) return false;
@@ -55,9 +61,14 @@ bool ChunkDownloader::fetchChunk(const std::string& filename, int seederPort, in
     int hn = cs.receiveLine(header, sizeof(header));
     if (hn <= 0) return false;
 
-    if (!strncmp(header, "<FILE_NOT_FOUND>", 15)) return false;
-    if (!strncmp(header, "<RANGE_ERROR>", 12)) return false;
-    if (!strncmp(header, "<BAD_REQUEST>", 13)) return false;
+    if (!strncmp(header, "<FILE_NOT_FOUND>", 15)) {
+        if (outCode) *outCode = 2;
+        return false;
+    }
+    if (!strncmp(header, "<RANGE_ERROR>", 12) || !strncmp(header, "<BAD_REQUEST>", 13)) {
+        if (outCode) *outCode = 3;
+        return false;
+    }
 
     int idx = -1, nbytes = 0;
     if (sscanf(header, "<CHUNK> %d %d", &idx, &nbytes) != 2) return false;
@@ -66,19 +77,24 @@ bool ChunkDownloader::fetchChunk(const std::string& filename, int seederPort, in
     if (!cs.receiveExact(outBuf, (size_t)nbytes)) return false;
 
     outN = (size_t)nbytes;
+    if (outCode) *outCode = 0; // OK
     return true;
 }
 
-bool ChunkDownloader::download(const std::string& filename,
-                               const std::vector<int>& seeders,
-                               int myPort) {
+bool ChunkDownloader::download(
+    const std::string& filename,
+    const std::vector<int>& seeders,
+    int myPort
+) {
     return download(filename, seeders, myPort, nullptr);
 }
 
-bool ChunkDownloader::download(const std::string& filename,
-                               const std::vector<int>& seeders,
-                               int myPort,
-                               DownloadProgress* prog) {
+bool ChunkDownloader::download(
+    const std::string& filename,
+    const std::vector<int>& seeders,
+    int myPort,
+    DownloadProgress* prog
+) {
     if (seeders.empty()) return false;
 
     // --- INIT PROGRESS ---
@@ -105,8 +121,7 @@ bool ChunkDownloader::download(const std::string& filename,
         return false;
     }
 
-    const int totalChunks =
-        static_cast<int>((size + chunkSize_ - 1) / chunkSize_);
+    const int totalChunks = static_cast<int>((size + chunkSize_ - 1) / chunkSize_);
 
     if (prog) {
         prog->totalBytes.store(size);
@@ -124,30 +139,68 @@ bool ChunkDownloader::download(const std::string& filename,
         return false;
     }
 
-    std::mutex fileMu;                 // protect fseeko + fwrite
-    std::atomic<int> nextChunk{0};     // shared work queue
+    std::mutex fileMu;               // protect fseek + fwrite
+    std::atomic<int> nextChunk{0};   // shared work queue
     std::atomic<bool> anyFailed{false};
 
     // --- WORKER FUNCTION ---
-    auto worker = [&](int seederPort) {
+    auto worker = [&](int workerId) {
         std::vector<char> buf(chunkSize_);
+        int backoffMs = 200;
 
         while (true) {
             int chunk = nextChunk.fetch_add(1);
             if (chunk >= totalChunks) break;
 
             size_t n = 0;
-            if (!fetchChunk(filename, seederPort, chunk, buf.data(), n)) {
-                // Seeder temporarily unavailable → retry later
-                prog->pending.store(true);
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                nextChunk.fetch_sub(1); // put chunk back
-                continue;
+            bool ok = false;
+
+            while (!ok) {
+                bool sawTempFail = false;
+                bool sawPermanentFail = false;
+
+                for (size_t k = 0; k < seeders.size(); ++k) {
+                    int p = seeders[(workerId + (int)k) % (int)seeders.size()];
+
+                    int code = 1; // TEMP_FAIL
+                    if (fetchChunk(filename, p, chunk, buf.data(), n, &code)) {
+                        ok = true;
+                        break;
+                    }
+
+                    if (code == 1) {
+                        sawTempFail = true;      // seeder down / connection issue
+                    } else {
+                        sawPermanentFail = true; // file not found / range / bad request
+                    }
+                }
+
+                if (!ok) {
+                    // If any seeder looks temporarily down, keep waiting (auto-resume)
+                    if (sawTempFail) {
+                        if (prog) prog->pending.store(true);
+
+                        std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
+                        backoffMs = std::min(backoffMs * 2, 2000);
+                        continue;
+                    }
+
+                    // No temp failures -> everyone gave permanent failure -> stop
+                    anyFailed.store(true);
+                    if (prog) {
+                        prog->pending.store(false);
+                        prog->failed.store(true);
+                        prog->active.store(false);
+                    }
+                    return;
+                }
+
+                // Success path
+                backoffMs = 200;
+                if (prog) prog->pending.store(false);
             }
 
-            long long offset =
-                static_cast<long long>(chunk) * chunkSize_;
-
+            long long offset = (long long)chunk * (long long)chunkSize_;
             {
                 std::lock_guard<std::mutex> lock(fileMu);
                 fseek(out, offset, SEEK_SET);
@@ -155,7 +208,6 @@ bool ChunkDownloader::download(const std::string& filename,
             }
 
             if (prog) {
-                prog->pending.store(false);
                 prog->doneBytes.fetch_add(n);
                 prog->doneChunks.fetch_add(1);
             }
@@ -164,8 +216,9 @@ bool ChunkDownloader::download(const std::string& filename,
 
     // --- SPAWN THREADS ---
     std::vector<std::thread> threads;
-    for (int p : seeders) {
-        threads.emplace_back(worker, p);
+    int numThreads = (int)seeders.size(); // simple: 1 thread per seeder
+    for (int i = 0; i < numThreads; ++i) {
+        threads.emplace_back(worker, i);
     }
 
     // --- WAIT ---
@@ -178,18 +231,23 @@ bool ChunkDownloader::download(const std::string& filename,
     // --- FINAL STATE ---
     if (prog) {
         prog->active.store(false);
-        if (prog->doneChunks.load() == totalChunks)
+        if (prog->doneChunks.load() == totalChunks) {
             prog->success.store(true);
-        else
+        } else {
             prog->failed.store(true);
+        }
     }
 
-    return prog && prog->success.load();
+    bool ok = (!anyFailed.load());
+    if (prog) ok = prog->success.load();
+    return ok;
 }
 
-bool ChunkDownloader::probeSize(const std::string& filename,
-                                const std::vector<int>& seeders,
-                                long long& outSize) {
+bool ChunkDownloader::probeSize(
+    const std::string& filename,
+    const std::vector<int>& seeders,
+    long long& outSize
+) {
     outSize = -1;
     for (int p : seeders) {
         if (fetchMeta(filename, p, outSize)) return true;

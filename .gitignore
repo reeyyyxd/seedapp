@@ -1,2 +1,23 @@
-seedapp/bin/ports
-seedapp/build
+# macOS junk
+.DS_Store
+
+# build outputs
+seedapp/build/
+seedapp/bin/ports/
+seedapp/bin/ports/9000
+seedapp/bin/ports/9001
+seedapp/bin/ports/9002
+seedapp/bin/ports/9003
+seedapp/bin/ports/9004
+
+
+
+# common build artifacts
+*.o
+*.obj
+
+# (optional) ignore random downloaded files you don’t want committed
+*.pkg
+*.zip
+*.pdf
+*.docx

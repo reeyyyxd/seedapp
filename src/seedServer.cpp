@@ -96,17 +96,42 @@ bool SeedServer::handleMeta(int clientFd, int port, const char* filename) {
 }
 
 bool SeedServer::handleGet(int clientFd, int port, const char* line) {
-    char filename[200];
-    int chunkIndex = -1;
+    // Expected: "GET <filename possibly with spaces> <chunkIndex>"
+    if (strncmp(line, "GET ", 4) != 0) {
+        const char* bad = "<BAD_REQUEST>\n";
+        NetIo::sendAll(clientFd, bad, strlen(bad));
+        return false;
+    }
 
-    if (sscanf(line, "GET %199s %d", filename, &chunkIndex) != 2 || chunkIndex < 0) {
+    const char* payload = line + 4;                 // after "GET "
+    const char* lastSpace = strrchr(payload, ' ');  // last token is chunkIndex
+
+    if (!lastSpace || lastSpace == payload) {
+        const char* bad = "<BAD_REQUEST>\n";
+        NetIo::sendAll(clientFd, bad, strlen(bad));
+        return false;
+    }
+
+    // Parse chunkIndex
+    char* endp = nullptr;
+    long idx = strtol(lastSpace + 1, &endp, 10);
+    if (!endp || *endp != '\0' || idx < 0) {
+        const char* bad = "<BAD_REQUEST>\n";
+        NetIo::sendAll(clientFd, bad, strlen(bad));
+        return false;
+    }
+    int chunkIndex = (int)idx;
+
+    // Extract filename (everything before lastSpace)
+    std::string filename(payload, (size_t)(lastSpace - payload));
+    if (filename.empty()) {
         const char* bad = "<BAD_REQUEST>\n";
         NetIo::sendAll(clientFd, bad, strlen(bad));
         return false;
     }
 
     char path[256];
-    snprintf(path, sizeof(path), "bin/ports/%d/%s", port, filename);
+    snprintf(path, sizeof(path), "bin/ports/%d/%s", port, filename.c_str());
 
     long long sz = getFileSizeBytes(path);
     if (sz < 0) {

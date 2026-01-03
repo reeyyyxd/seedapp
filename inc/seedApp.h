@@ -22,6 +22,8 @@ private:
         std::chrono::steady_clock::time_point start;
         DownloadProgress progress;
         std::thread worker;
+        long long lastDoneBytes = 0;
+        std::chrono::steady_clock::time_point lastTick;
     };
 
 public:
