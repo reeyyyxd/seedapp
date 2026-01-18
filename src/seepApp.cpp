@@ -247,28 +247,53 @@ void SeedApp::downloadFlow() {
         selected.seeders.size() > 1 ? "s" : ""
     );
 
-    auto job = std::make_unique<DownloadJob>();
-    job->filename = selected.filename;
-    job->seeders  = selected.seeders;
-    job->start    = std::chrono::steady_clock::now();
-    job->lastDoneBytes = 0;
-    job->lastTick = job->start;
-    job->progress.reset();
-    job->progress.active.store(true);
+    // auto job = std::make_unique<DownloadJob>();
+    // job->filename = selected.filename;
+    // job->seeders  = selected.seeders;
+    // job->start    = std::chrono::steady_clock::now();
+    // job->lastDoneBytes = 0;
+    // job->lastTick = job->start;
+    // job->progress.reset();
+    // job->progress.active.store(true);
 
-    job->worker = std::thread([this, j = job.get()] {
-        bool ok = downloader_.download(
-            j->filename,
-            j->seeders,
-            myPort_,
-            &j->progress
-        );
+    // job->worker = std::thread([this, j = job.get()] {
+    //     bool ok = downloader_.download(
+    //         j->filename,
+    //         j->seeders,
+    //         myPort_,
+    //         &j->progress
+    //     );
 
-       if (ok) {
-            j->progress.success.store(true);
-            j->progress.active.store(false);
-        }
-    });
+    //    if (ok) {
+    //         j->progress.success.store(true);
+    //         j->progress.active.store(false);
+    //     }
+    // });
+
+    std::unique_ptr<DownloadJob> job(new DownloadJob());
+        job->filename = selected.filename;
+        job->seeders  = selected.seeders;
+        job->start    = std::chrono::steady_clock::now();
+        job->lastDoneBytes = 0;
+        job->lastTick = job->start;
+        job->progress.reset();
+        job->progress.active.store(true);
+
+        DownloadJob* j = job.get();
+
+        job->worker = std::thread([this, j] {
+            bool ok = downloader_.download(
+                j->filename,
+                j->seeders,
+                myPort_,
+                &j->progress
+            );
+
+            if (ok) {
+                j->progress.success.store(true);
+                j->progress.active.store(false);
+            }
+        });
 
     job->worker.detach();
 

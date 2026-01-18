@@ -1,0 +1,27 @@
+=== SeedApp session start 20260118_180736 ===
+2026-01-18 18:07:36.121 INFO ALLOC T#fc075f00 portAllocator.cpp:33 claim - claimed port=9001 fd=3
+2026-01-18 18:07:36.121 INFO SERVER T#6fa4f000 seedServer.cpp:212 serveLoop - listening port=9001
+2026-01-18 18:07:40.250 TRACE SERVER T#6fa4f000 serversocket.cpp:63 accept - accepted client fd=4
+2026-01-18 18:07:40.250 TRACE SERVER T#6fa4f000 seedServer.cpp:219 serveLoop - accepted client fd=4 port=9001
+2026-01-18 18:07:40.250 DEBUG SERVER T#6fa4f000 seedServer.cpp:224 serveLoop - dispatch handleClient fd=4 port=9001
+2026-01-18 18:07:40.250 TRACE SERVER T#6fadb000 seedServer.cpp:173 handleClient - request fd=4 line='LIST
+'
+2026-01-18 18:07:42.094 TRACE SERVER T#6fa4f000 serversocket.cpp:63 accept - accepted client fd=4
+2026-01-18 18:07:42.094 TRACE SERVER T#6fa4f000 seedServer.cpp:219 serveLoop - accepted client fd=4 port=9001
+2026-01-18 18:07:42.094 DEBUG SERVER T#6fa4f000 seedServer.cpp:224 serveLoop - dispatch handleClient fd=4 port=9001
+2026-01-18 18:07:42.095 TRACE SERVER T#6fadb000 seedServer.cpp:173 handleClient - request fd=4 line='META TAJ08161.jpg
+'
+2026-01-18 18:07:49.317 TRACE SERVER T#6fa4f000 serversocket.cpp:63 accept - accepted client fd=4
+2026-01-18 18:07:49.317 TRACE SERVER T#6fa4f000 seedServer.cpp:219 serveLoop - accepted client fd=4 port=9001
+2026-01-18 18:07:49.317 DEBUG SERVER T#6fa4f000 seedServer.cpp:224 serveLoop - dispatch handleClient fd=4 port=9001
+2026-01-18 18:07:49.317 TRACE SERVER T#6fadb000 seedServer.cpp:173 handleClient - request fd=4 line='LIST
+'
+2026-01-18 18:07:51.334 TRACE SERVER T#6fa4f000 serversocket.cpp:63 accept - accepted client fd=4
+2026-01-18 18:07:51.335 TRACE SERVER T#6fa4f000 seedServer.cpp:219 serveLoop - accepted client fd=4 port=9001
+2026-01-18 18:07:51.335 DEBUG SERVER T#6fa4f000 seedServer.cpp:224 serveLoop - dispatch handleClient fd=4 port=9001
+2026-01-18 18:07:51.335 TRACE SERVER T#6fadb000 seedServer.cpp:173 handleClient - request fd=4 line='META .DS_Store
+'
+2026-01-18 18:08:01.558 WARN SERVER T#6fa4f000 serversocket.cpp:59 accept - accept() failed: Software caused connection abort
+2026-01-18 18:08:01.558 TRACE SERVER T#6fa4f000 seedServer.cpp:219 serveLoop - accepted client fd=-1 port=9001
+2026-01-18 18:08:01.558 INFO SERVER T#6fa4f000 seedServer.cpp:229 serveLoop - stopped port=9001
+=== SeedApp session end 20260118_180801 ===

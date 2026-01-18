@@ -1,0 +1,67 @@
+=== SeedApp session start 20260118_180721 ===
+2026-01-18 18:07:21.271 INFO ALLOC T#fc075f00 portAllocator.cpp:33 claim - claimed port=9000 fd=3
+2026-01-18 18:07:21.271 INFO SERVER T#6fd73000 seedServer.cpp:212 serveLoop - listening port=9000
+2026-01-18 18:07:24.344 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:24.344 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9001 err=Connection refused
+2026-01-18 18:07:24.344 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:24.344 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:24.344 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9002 err=Connection refused
+2026-01-18 18:07:24.344 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:24.344 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:24.344 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9003 err=Connection refused
+2026-01-18 18:07:24.344 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:24.344 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:24.344 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9004 err=Connection refused
+2026-01-18 18:07:24.344 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:40.250 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:40.250 DEBUG CLIENT T#fc075f00 clientsocket.cpp:47 connectServer - connected ip=127.0.0.1 port=9001 fd=4
+2026-01-18 18:07:40.250 TRACE NET T#fc075f00 clientsocket.cpp:123 sendAll - sendAll ok fd=4 bytes=5
+2026-01-18 18:07:40.250 TRACE NET T#fc075f00 clientsocket.cpp:71 sendData - sendData ok bytes=5
+2026-01-18 18:07:40.250 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=7
+2026-01-18 18:07:40.253 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=18
+2026-01-18 18:07:40.253 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=15
+2026-01-18 18:07:40.253 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=6
+2026-01-18 18:07:40.253 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:40.253 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:40.253 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9002 err=Connection refused
+2026-01-18 18:07:40.253 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:40.253 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:40.253 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9003 err=Connection refused
+2026-01-18 18:07:40.253 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:40.253 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:40.253 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9004 err=Connection refused
+2026-01-18 18:07:40.253 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:42.094 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:42.094 DEBUG CLIENT T#fc075f00 clientsocket.cpp:47 connectServer - connected ip=127.0.0.1 port=9001 fd=4
+2026-01-18 18:07:42.094 TRACE NET T#fc075f00 clientsocket.cpp:123 sendAll - sendAll ok fd=4 bytes=18
+2026-01-18 18:07:42.094 TRACE NET T#fc075f00 clientsocket.cpp:71 sendData - sendData ok bytes=18
+2026-01-18 18:07:42.095 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=15
+2026-01-18 18:07:42.095 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:49.317 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:49.317 DEBUG CLIENT T#fc075f00 clientsocket.cpp:47 connectServer - connected ip=127.0.0.1 port=9001 fd=4
+2026-01-18 18:07:49.317 TRACE NET T#fc075f00 clientsocket.cpp:123 sendAll - sendAll ok fd=4 bytes=5
+2026-01-18 18:07:49.317 TRACE NET T#fc075f00 clientsocket.cpp:71 sendData - sendData ok bytes=5
+2026-01-18 18:07:49.317 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=7
+2026-01-18 18:07:49.318 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=18
+2026-01-18 18:07:49.318 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=15
+2026-01-18 18:07:49.318 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=6
+2026-01-18 18:07:49.318 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:49.318 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:49.318 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9002 err=Connection refused
+2026-01-18 18:07:49.318 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:49.318 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:49.318 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9003 err=Connection refused
+2026-01-18 18:07:49.318 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:49.318 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:49.318 WARN CLIENT T#fc075f00 clientsocket.cpp:43 connectServer - connect() failed ip=127.0.0.1 port=9004 err=Connection refused
+2026-01-18 18:07:49.318 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:51.334 TRACE CLIENT T#fc075f00 clientsocket.cpp:14 clientSocket - socket() ok fd=4
+2026-01-18 18:07:51.334 DEBUG CLIENT T#fc075f00 clientsocket.cpp:47 connectServer - connected ip=127.0.0.1 port=9001 fd=4
+2026-01-18 18:07:51.334 TRACE NET T#fc075f00 clientsocket.cpp:123 sendAll - sendAll ok fd=4 bytes=15
+2026-01-18 18:07:51.334 TRACE NET T#fc075f00 clientsocket.cpp:71 sendData - sendData ok bytes=15
+2026-01-18 18:07:51.335 TRACE NET T#fc075f00 clientsocket.cpp:238 receiveLine - receiveLine ok fd=4 bytes=12
+2026-01-18 18:07:51.335 DEBUG CLIENT T#fc075f00 clientsocket.cpp:56 closeConn - closed client socket fd=4
+2026-01-18 18:07:58.625 WARN SERVER T#6fd73000 serversocket.cpp:59 accept - accept() failed: Software caused connection abort
+2026-01-18 18:07:58.625 TRACE SERVER T#6fd73000 seedServer.cpp:219 serveLoop - accepted client fd=-1 port=9000
+2026-01-18 18:07:58.625 INFO SERVER T#6fd73000 seedServer.cpp:229 serveLoop - stopped port=9000
+=== SeedApp session end 20260118_180758 ===

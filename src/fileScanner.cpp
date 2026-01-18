@@ -56,7 +56,7 @@ static bool listFilesFromPort(int port, std::vector<std::string>& outNames) {
     stripNewlines(line);
 
     if (strcmp(line, "<LIST>") != 0) {
-        logWarn("LIST: unexpected first line from port %d: '%s'", port, line);
+        LWLOG_WARN("CLIENT", "LIST unexpected first line port=%d line='%s'", port, line);
         return false;
     }
 

@@ -170,6 +170,7 @@ void SeedServer::handleClient(int clientFd, int port) {
     char line[256];
     int n = NetIo::recvLine(clientFd, line, sizeof(line));
     if (n <= 0) { ::close(clientFd); return; }
+    LWLOG_TRACE("SERVER", "request fd=%d line='%s'", clientFd, line);
 
     size_t L = strlen(line);
     if (L && line[L - 1] == '\n') line[L - 1] = '\0';
@@ -195,6 +196,7 @@ void SeedServer::handleClient(int clientFd, int port) {
     const char* bad = "<BAD_REQUEST>\n";
     NetIo::sendAll(clientFd, bad, strlen(bad));
     ::close(clientFd);
+    LWLOG_WARN("SERVER", "bad request fd=%d line='%s'", clientFd, line);
 }
 
 void SeedServer::serveLoop(int port, int listenFd) {
@@ -202,26 +204,27 @@ void SeedServer::serveLoop(int port, int listenFd) {
     ss.setSocket(listenFd);
 
     if (ss.listen_only() < 0) {
-        logErr("SeedServer listen failed on port %d", port);
+        LWLOG_ERROR("SERVER", "listen failed port=%d", port);
         running_ = false;
         return;
     }
 
-    logInfo("SeedServer listening on port %d", port);
+    LWLOG_INFO("SERVER", "listening port=%d", port);
 
     sockaddr_in addr{};
     socklen_t addrlen = sizeof(addr);
 
     while (running_) {
         int clientFd = ss.accept(addr, addrlen);
-
+        LWLOG_TRACE("SERVER", "accepted client fd=%d port=%d", clientFd, port);
         if (clientFd < 0) {
             if (!running_) break;
             continue;
         }
-
+        LWLOG_DEBUG("SERVER", "dispatch handleClient fd=%d port=%d", clientFd, port);
         std::thread(&SeedServer::handleClient, this, clientFd, port).detach();
+        
     }
 
-    logInfo("SeedServer stopped (port %d)", port);
+    LWLOG_INFO("SERVER", "stopped port=%d", port);
 }
