@@ -30,25 +30,23 @@ bool PortAllocator::claim(int startPort, int endPort) {
         if (::bind(fd, (sockaddr*)&addr, sizeof(addr)) == 0) {
             port_ = p;
             listenFd_ = fd;
-            LWLOG_INFO("ALLOC", "claimed port=%d fd=%d", port_, listenFd_);
+            logInfo("claimed port %d (fd=%d)", port_, listenFd_);
             return true;
         }
         ::close(fd);
     }
 
-    LWLOG_WARN("ALLOC", "no available port in range %d-%d", startPort, endPort);
+    logWarn("no available port");
     return false;
 }
 
 void PortAllocator::release() {
     if (listenFd_ >= 0) {
-    int fd = listenFd_;
-    int p  = port_;
-    ::close(listenFd_);
-    listenFd_ = -1;
-    port_ = -1;
-    LWLOG_INFO("ALLOC", "released port=%d fd=%d", p, fd);
-}
+        ::close(listenFd_);
+        logInfo("released port %d (fd=%d)", port_, listenFd_);
+        listenFd_ = -1;
+        port_ = -1;
+    }
 
     
 }

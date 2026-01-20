@@ -48,7 +48,7 @@ bool ChunkDownloader::fetchChunk(
     int* outCode
 ) {
     outN = 0;
-    if (outCode) *outCode = 1; // TEMP_FAIL default
+    if (outCode) *outCode = 1;
 
     clientSocket cs;
     if (!cs.connectServer("127.0.0.1", seederPort)) return false;
@@ -77,7 +77,7 @@ bool ChunkDownloader::fetchChunk(
     if (!cs.receiveExact(outBuf, (size_t)nbytes)) return false;
 
     outN = (size_t)nbytes;
-    if (outCode) *outCode = 0; // OK
+    if (outCode) *outCode = 0;
     return true;
 }
 
@@ -97,13 +97,11 @@ bool ChunkDownloader::download(
 ) {
     if (seeders.empty()) return false;
 
-    // --- INIT PROGRESS ---
     if (prog) {
         prog->reset();
         prog->active.store(true);
     }
 
-    // --- FETCH META ---
     long long size = -1;
     bool metaOk = false;
     for (int p : seeders) {
@@ -128,9 +126,9 @@ bool ChunkDownloader::download(
         prog->totalChunks.store(totalChunks);
     }
 
-    // --- OPEN OUTPUT FILE ---
     std::string outPath = portDirectory(myPort) + "/" + filename;
-    FILE* out = fopen(outPath.c_str(), "wb+");
+    std::string tmpPath = outPath + ".part";
+    FILE* out = fopen(tmpPath.c_str(), "wb+");
     if (!out) {
         if (prog) {
             prog->failed.store(true);
@@ -139,11 +137,11 @@ bool ChunkDownloader::download(
         return false;
     }
 
-    std::mutex fileMu;               // protect fseek + fwrite
-    std::atomic<int> nextChunk{0};   // shared work queue
+    std::mutex fileMu;              
+    std::atomic<int> nextChunk{0};   
     std::atomic<bool> anyFailed{false};
 
-    // --- WORKER FUNCTION ---
+
     auto worker = [&](int workerId) {
         std::vector<char> buf(chunkSize_);
         int backoffMs = 200;
@@ -162,21 +160,20 @@ bool ChunkDownloader::download(
                 for (size_t k = 0; k < seeders.size(); ++k) {
                     int p = seeders[(workerId + (int)k) % (int)seeders.size()];
 
-                    int code = 1; // TEMP_FAIL
+                    int code = 1;
                     if (fetchChunk(filename, p, chunk, buf.data(), n, &code)) {
                         ok = true;
                         break;
                     }
 
                     if (code == 1) {
-                        sawTempFail = true;      // seeder down / connection issue
+                        sawTempFail = true;    
                     } else {
-                        sawPermanentFail = true; // file not found / range / bad request
+                        sawPermanentFail = true;
                     }
                 }
 
                 if (!ok) {
-                    // If any seeder looks temporarily down, keep waiting (auto-resume)
                     if (sawTempFail) {
                         if (prog) prog->pending.store(true);
 
@@ -185,7 +182,6 @@ bool ChunkDownloader::download(
                         continue;
                     }
 
-                    // No temp failures -> everyone gave permanent failure -> stop
                     anyFailed.store(true);
                     if (prog) {
                         prog->pending.store(false);
@@ -195,7 +191,6 @@ bool ChunkDownloader::download(
                     return;
                 }
 
-                // Success path
                 backoffMs = 200;
                 if (prog) prog->pending.store(false);
             }
@@ -214,21 +209,33 @@ bool ChunkDownloader::download(
         }
     };
 
-    // --- SPAWN THREADS ---
+
     std::vector<std::thread> threads;
-    int numThreads = (int)seeders.size(); // simple: 1 thread per seeder
+    int numThreads = (int)seeders.size();
     for (int i = 0; i < numThreads; ++i) {
         threads.emplace_back(worker, i);
     }
 
-    // --- WAIT ---
     for (auto& t : threads) {
         t.join();
     }
 
     fclose(out);
 
-    // --- FINAL STATE ---
+    bool completed = (prog ? prog->doneChunks.load() == totalChunks : (!anyFailed.load()));
+    if (completed) {
+        std::remove(outPath.c_str());
+        if (std::rename(tmpPath.c_str(), outPath.c_str()) != 0) {
+            if (prog) {
+                prog->failed.store(true);
+                prog->success.store(false);
+            }
+            return false;
+        }
+    } else {
+        // std::remove(tmpPath.c_str());
+    }
+
     if (prog) {
         prog->active.store(false);
         if (prog->doneChunks.load() == totalChunks) {

@@ -7,6 +7,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <atomic>
 
 #include "portAllocator.h"
 #include "seedServer.h"
@@ -19,7 +20,11 @@ private:
     struct DownloadJob {
         std::string filename;
         std::vector<int> seeders;
+
         std::chrono::steady_clock::time_point start;
+        std::chrono::steady_clock::time_point end;
+        std::atomic<bool> finished{false};
+
         DownloadProgress progress;
         std::thread worker;
         long long lastDoneBytes = 0;

@@ -5,12 +5,76 @@
 #include <unistd.h>
 #include <termios.h>
 #include <sys/select.h>
+#include <cerrno>
+#include <cstdlib>
+
+
+static std::string dQuote(const std::string& s) {
+    std::string out; out.reserve(s.size()+2);
+    out.push_back('"');
+    for (char c : s) out += (c=='"') ? "\\\"" : std::string(1,c);
+    out.push_back('"');
+    return out;
+}
+
+static void scriptRunner(const std::string& targetPath)
+{
+    const std::string shell = "powershell";
+    const std::string script = "script.ps1";
+
+    std::string cmd = shell
+        + " -NoProfile -ExecutionPolicy Bypass -File "
+        + dQuote(script)
+        + " -Path "
+        + dQuote(targetPath);
+
+    (void)std::system(cmd.c_str());
+}
+
+
+static std::string fmtElapsed(std::chrono::steady_clock::duration d) {
+    using namespace std::chrono;
+    long long sec = duration_cast<seconds>(d).count();
+    if (sec < 0) sec = 0;
+
+    long long h = sec / 3600;
+    long long m = (sec % 3600) / 60;
+    long long s = sec % 60;
+
+    char buf[32];
+    if (h > 0) std::snprintf(buf, sizeof(buf), "%02lld:%02lld:%02lld", h, m, s);
+    else       std::snprintf(buf, sizeof(buf), "%02lld:%02lld", m, s);
+    return std::string(buf);
+}
 
 //this for fancy2x
 static void clearScreen() {
-    printf("\033[2J\033[H");
+    printf("\033[H\033[J");
     fflush(stdout);
 }
+
+static std::string fmtBar(double pct, int width = 30) {
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+
+    int filled = (int)((pct / 100.0) * width + 0.5);
+    if (filled < 0) filled = 0;
+    if (filled > width) filled = width;
+
+    std::string bar;
+    bar.reserve(width + 2);
+    bar.push_back('[');
+    bar.append(filled, '#');              // or '█' if your terminal supports it
+    bar.append(width - filled, ' ');
+    bar.push_back(']');
+    return bar;
+}
+
+static double safePct(long long done, long long total) {
+    if (total <= 0) return 0.0;
+    return (100.0 * (double)done / (double)total);
+}
+
 
 
 static struct termios origTerm;
@@ -27,20 +91,31 @@ static void disableRawMode() {
 }
 
 
+
 static bool keyPressed(char& out) {
     fd_set set;
-    struct timeval timeout {0, 0};
+    struct timeval timeout{0, 0};
 
-    FD_ZERO(&set);
-    FD_SET(STDIN_FILENO, &set);
+    while (true) {
+        FD_ZERO(&set);
+        FD_SET(STDIN_FILENO, &set);
 
-    if (select(STDIN_FILENO + 1, &set, nullptr, nullptr, &timeout) > 0) {
-        if (read(STDIN_FILENO, &out, 1) == 1) {
-            return true;
+        int r = select(STDIN_FILENO + 1, &set, nullptr, nullptr, &timeout);
+        if (r > 0) {
+            ssize_t n = read(STDIN_FILENO, &out, 1);
+            return n == 1;
         }
+        if (r == 0) {
+            return false; // no key
+        }
+        if (errno == EINTR) {
+            continue; // interrupted by a signal; try again
+        }
+        // Other error: treat as no key or log it
+        return false;
     }
-    return false;
 }
+
 
 SeedApp::SeedApp(int startPort, int endPort, int chunkSize)
     : startPort_(startPort),
@@ -51,19 +126,32 @@ SeedApp::SeedApp(int startPort, int endPort, int chunkSize)
       scanner_(startPort, endPort),
       downloader_(chunkSize, startPort, endPort) {}
 
+
 int SeedApp::readInt(bool* eof) const {
     char buf[64];
 
-    if (!fgets(buf, sizeof(buf), stdin)) {
-        if (eof) *eof = true;
+    for (;;) {
+        errno = 0;
+        if (fgets(buf, sizeof(buf), stdin)) {
+            if (eof) *eof = false;
+            break; // got a line
+        }
+
+        if (errno == EINTR) {
+            clearerr(stdin);
+            continue;
+        }
+        if (feof(stdin)) {
+            if (eof) *eof = true;
+        } else {
+            //perror("fgets");
+        }
         return -1;
     }
-    if (eof) *eof = false;
 
+    // Strip newline
     size_t len = strlen(buf);
-    if (len && buf[len - 1] == '\n') {
-        buf[len - 1] = '\0';
-    }
+    if (len && buf[len - 1] == '\n') buf[len - 1] = '\0';
 
     char* end = nullptr;
     long v = strtol(buf, &end, 10);
@@ -128,7 +216,8 @@ void SeedApp::statusFlow() {
                     int tChunks       = j->progress.totalChunks.load();
                     int dChunks       = j->progress.doneChunks.load();
 
-                    double pct = (total > 0) ? (100.0 * (double)done / (double)total) : 0.0;
+                    double pct = safePct(done, total);
+                    std::string bar = fmtBar(pct, 30);
 
                     auto now = std::chrono::steady_clock::now();
                     double dt = std::chrono::duration<double>(now - j->lastTick).count();
@@ -136,11 +225,20 @@ void SeedApp::statusFlow() {
                     double speed = (dt > 0.0) ? ((double)delta / dt) / 1024.0 : 0.0;
                     j->lastTick = now;
                     j->lastDoneBytes = done;
+                    auto endTime = j->finished.load() ? j->end : now;
+                    auto elapsed = endTime - j->start;
+
+           
 
                     printf("[%zu] %s\n", i + 1, j->filename.c_str());
-                    printf(" Progress : %lld / %lld bytes (%.2f%%)\n", done, total, pct);
+                    printf(" %s  %6.2f%%\n", bar.c_str(), pct);
                     printf(" Chunks   : %d / %d\n", dChunks, tChunks);
                     printf(" Speed    : %.2f KB/s\n", speed);
+                    if (j->finished.load()) {
+                        printf(" Time Completed    : %s\n", fmtElapsed(elapsed).c_str());
+                    } else {
+                        printf(" Time Elapsed  : %s\n", fmtElapsed(elapsed).c_str());
+                    }
 
                     if (j->progress.success)
                         printf(" State    : COMPLETED\n");
@@ -256,6 +354,7 @@ void SeedApp::downloadFlow() {
     // job->progress.reset();
     // job->progress.active.store(true);
 
+    
     // job->worker = std::thread([this, j = job.get()] {
     //     bool ok = downloader_.download(
     //         j->filename,
@@ -264,16 +363,24 @@ void SeedApp::downloadFlow() {
     //         &j->progress
     //     );
 
-    //    if (ok) {
+    //     if (ok) {
     //         j->progress.success.store(true);
+    //         j->progress.active.store(false);
+    //        // scriptRunner("bin/ports");
+
+    //     } else {
+    //         j->progress.failed.store(true);
     //         j->progress.active.store(false);
     //     }
     // });
+
 
     std::unique_ptr<DownloadJob> job(new DownloadJob());
         job->filename = selected.filename;
         job->seeders  = selected.seeders;
         job->start    = std::chrono::steady_clock::now();
+        job->end      = job->start; 
+        job->finished.store(false);    
         job->lastDoneBytes = 0;
         job->lastTick = job->start;
         job->progress.reset();
@@ -289,11 +396,22 @@ void SeedApp::downloadFlow() {
                 &j->progress
             );
 
+            // Always update state flags
+            j->progress.active.store(false);
+
             if (ok) {
                 j->progress.success.store(true);
-                j->progress.active.store(false);
+                j->progress.failed.store(false);
+                 // scriptRunner("bin/ports");
+            } else {
+                j->progress.success.store(false);
+                j->progress.failed.store(true);
             }
+
+            j->end = std::chrono::steady_clock::now();
+            j->finished.store(true);
         });
+
 
     job->worker.detach();
 
