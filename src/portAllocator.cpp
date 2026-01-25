@@ -30,6 +30,7 @@ bool PortAllocator::claim(int startPort, int endPort) {
         if (::bind(fd, (sockaddr*)&addr, sizeof(addr)) == 0) {
             port_ = p;
             listenFd_ = fd;
+            Logger::setPort(port_);
             logInfo("claimed port %d (fd=%d)", port_, listenFd_);
             return true;
         }

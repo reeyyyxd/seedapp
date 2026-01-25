@@ -241,6 +241,7 @@ void SeedServer::handleClient(int clientFd, int port) {
 
     size_t L = strlen(line);
     if (L && line[L - 1] == '\n') line[L - 1] = '\0';
+    
 
     if (strcmp(line, "LIST") == 0) {
         handleList(clientFd, port);

@@ -1,6 +1,7 @@
 #include "../inc/chunkDownloader.h"
 #include "../inc/clientsocket.h"
 #include "../inc/logger2.h"
+
 #include <cstdio>
 #include <cstring>
 #include <sys/types.h>
@@ -8,6 +9,7 @@
 #include <atomic>
 #include <mutex>
 #include <algorithm>
+#include <chrono>   // <-- needed for sleep_for
 
 ChunkDownloader::ChunkDownloader(int chunkSize, int startPort, int endPort)
     : chunkSize_(chunkSize), startPort_(startPort), endPort_(endPort) {}
@@ -53,6 +55,7 @@ bool ChunkDownloader::fetchChunk(
     clientSocket cs;
     if (!cs.connectServer("127.0.0.1", seederPort)) return false;
 
+    // IMPORTANT: filename may contain spaces; server-side parser must support it (yours does via last-space parse)
     char req[256];
     snprintf(req, sizeof(req), "GET %s %d\n", filename.c_str(), chunkIndex);
     if (!cs.sendData(std::string(req))) return false;
@@ -102,6 +105,7 @@ bool ChunkDownloader::download(
         prog->active.store(true);
     }
 
+    // --- META ---
     long long size = -1;
     bool metaOk = false;
     for (int p : seeders) {
@@ -116,6 +120,7 @@ bool ChunkDownloader::download(
             prog->failed.store(true);
             prog->active.store(false);
         }
+        logErr("DL meta failed file='%s' seeders=%zu", filename.c_str(), seeders.size());
         return false;
     }
 
@@ -126,6 +131,9 @@ bool ChunkDownloader::download(
         prog->totalChunks.store(totalChunks);
     }
 
+    logInfo("DL start file='%s' size=%lld chunks=%d seeders=%zu myPort=%d",
+            filename.c_str(), size, totalChunks, seeders.size(), myPort);
+
     std::string outPath = portDirectory(myPort) + "/" + filename;
     std::string tmpPath = outPath + ".part";
     FILE* out = fopen(tmpPath.c_str(), "wb+");
@@ -134,13 +142,17 @@ bool ChunkDownloader::download(
             prog->failed.store(true);
             prog->active.store(false);
         }
+        logErr("DL open failed tmp='%s'", tmpPath.c_str());
         return false;
     }
 
-    std::mutex fileMu;              
-    std::atomic<int> nextChunk{0};   
+    std::mutex fileMu;
+    std::atomic<int> nextChunk{0};
     std::atomic<bool> anyFailed{false};
 
+    // Log "pending/resumed" only when state changes (no spam)
+    std::atomic<bool> pendingLogged{false};
+    std::atomic<bool> resumedLogged{false};
 
     auto worker = [&](int workerId) {
         std::vector<char> buf(chunkSize_);
@@ -167,9 +179,9 @@ bool ChunkDownloader::download(
                     }
 
                     if (code == 1) {
-                        sawTempFail = true;    
+                        sawTempFail = true;     // temp: connect/recv/etc
                     } else {
-                        sawPermanentFail = true;
+                        sawPermanentFail = true; // file not found / range / bad request
                     }
                 }
 
@@ -177,22 +189,39 @@ bool ChunkDownloader::download(
                     if (sawTempFail) {
                         if (prog) prog->pending.store(true);
 
+                        // Log once when entering "Looking for seeders"
+                        if (!pendingLogged.exchange(true)) {
+                            logWarn("DL pending (looking for seeders) file='%s' chunk=%d backoffMs=%d",
+                                    filename.c_str(), chunk, backoffMs);
+                            resumedLogged.store(false);
+                        }
+
                         std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
                         backoffMs = std::min(backoffMs * 2, 2000);
                         continue;
                     }
 
+                    // Permanent failure
                     anyFailed.store(true);
                     if (prog) {
                         prog->pending.store(false);
                         prog->failed.store(true);
                         prog->active.store(false);
                     }
+
+                    logErr("DL failed permanent file='%s' chunk=%d (no usable seeder response)",
+                           filename.c_str(), chunk);
                     return;
                 }
 
+                // Success after pending -> log one "resumed"
                 backoffMs = 200;
                 if (prog) prog->pending.store(false);
+
+                if (pendingLogged.load() && !resumedLogged.exchange(true)) {
+                    logInfo("DL resumed file='%s'", filename.c_str());
+                    pendingLogged.store(false);
+                }
             }
 
             long long offset = (long long)chunk * (long long)chunkSize_;
@@ -208,7 +237,6 @@ bool ChunkDownloader::download(
             }
         }
     };
-
 
     std::vector<std::thread> threads;
     int numThreads = (int)seeders.size();
@@ -229,10 +257,13 @@ bool ChunkDownloader::download(
             if (prog) {
                 prog->failed.store(true);
                 prog->success.store(false);
+                prog->active.store(false);
             }
+            logErr("DL rename failed tmp='%s' -> out='%s'", tmpPath.c_str(), outPath.c_str());
             return false;
         }
     } else {
+        // keep .part for resume/debug
         // std::remove(tmpPath.c_str());
     }
 
@@ -243,6 +274,13 @@ bool ChunkDownloader::download(
         } else {
             prog->failed.store(true);
         }
+    }
+
+    if (completed) {
+        logInfo("DL complete file='%s' bytes=%lld chunks=%d", filename.c_str(), size, totalChunks);
+    } else {
+        int done = prog ? prog->doneChunks.load() : -1;
+        logErr("DL incomplete file='%s' doneChunks=%d/%d", filename.c_str(), done, totalChunks);
     }
 
     bool ok = (!anyFailed.load());
