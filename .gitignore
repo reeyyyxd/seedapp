@@ -9,15 +9,21 @@ seedapp/bin/ports/9001
 seedapp/bin/ports/9002
 seedapp/bin/ports/9003
 seedapp/bin/ports/9004
-
+seedapp/logs
 
 
 # common build artifacts
 *.o
 *.obj
+*.DS_Store
+*.docx
 
 # (optional) ignore random downloaded files you don’t want committed
 *.pkg
 *.zip
 *.pdf
 *.docx
+*.txt
+*.png
+*.asta.lock
+*.o

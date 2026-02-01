@@ -6,7 +6,7 @@
 #define BUFFER_SIZE  32
 
 int main() {
-    Logger::init("SeedApp", Logger::INFO, Logger::TRACE, "logs");
+    Logger::init("SeedApp", Logger::OFF, Logger::TRACE, "logs");
     SeedApp app(START_PORT, END_PORT, BUFFER_SIZE);
     return app.run();
 }

@@ -4,25 +4,52 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <netinet/tcp.h>
+#include <sys/time.h>
+
 
 clientSocket::clientSocket() : client_fd(-1) {
     client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0) {
         cErr("socket() failed: %s", strerror(errno));
         client_fd = -1;
-    } else {
-        cDbg("socket() ok, fd=%d", client_fd);
     }
+    //cDbg("socket() ok, fd=%d", client_fd);
 }
 
-clientSocket::~clientSocket() {
+clientSocket::~clientSocket() { 
     closeConn();
 }
 
+
 bool clientSocket::connectServer(const std::string& ip, int port) {
+    if (client_fd >= 0) {
+        ::close(client_fd);
+        client_fd = -1;
+    }
+
+    client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0) {
-        cErr("connectServer() called but socket fd is invalid");
+        cErr("socket() failed: %s", strerror(errno));
         return false;
+    }
+
+    // Enable socket options BEFORE connect
+    // Disable Nagle's algorithm for better small-packet performance
+    int one = 1;
+    if (::setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0) {
+        cWarn("setsockopt(TCP_NODELAY) failed: %s", strerror(errno));
+    }
+
+    // Set reasonable timeouts to avoid hanging forever
+    timeval tv;
+    tv.tv_sec = 5;  // 5 second timeout
+    tv.tv_usec = 0;
+    if (::setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        cWarn("setsockopt(SO_RCVTIMEO) failed: %s", strerror(errno));
+    }
+    if (::setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0) {
+        cWarn("setsockopt(SO_SNDTIMEO) failed: %s", strerror(errno));
     }
 
     memset(&serv_addr, 0, sizeof(serv_addr));
@@ -30,30 +57,35 @@ bool clientSocket::connectServer(const std::string& ip, int port) {
     serv_addr.sin_port   = htons(port);
 
     int rc = ::inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr);
-    if (rc == 0) {
-        cErr("inet_pton(): invalid IPv4 address '%s'", ip.c_str());
-        return false;
-    }
-    if (rc < 0) {
-        cErr("inet_pton() failed: %s", strerror(errno));
+    if (rc <= 0) {
+        if (rc == 0) {
+            cErr("inet_pton(): invalid IPv4 address '%s'", ip.c_str());
+        } else {
+            cErr("inet_pton() failed: %s", strerror(errno));
+        }
+        ::close(client_fd);
+        client_fd = -1;
         return false;
     }
 
     if (::connect(client_fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         cErr("connect() to %s:%d failed: %s", ip.c_str(), port, strerror(errno));
+        ::close(client_fd);
+        client_fd = -1;
         return false;
     }
 
-    cTrace("connected to %s:%d (fd=%d)", ip.c_str(), port, client_fd);
+    // Only log successful connections (INFO level, not TRACE)
+    cInfo("connected to %s:%d", ip.c_str(), port);
     return true;
 }
 
+
 void clientSocket::closeConn() {
     if (client_fd >= 0) {
-        int fd = client_fd;
         ::close(client_fd);
         client_fd = -1;
-        cTrace("closed client socket fd=%d", fd);
+        //cTrace("closed client socket fd=%d", fd);
     }
 }
 
@@ -68,7 +100,7 @@ bool clientSocket::sendData(const std::string& data) {
         return false;
     }
 
-    cTrace("sent %zu bytes (sendAll)", data.size());
+    //cTrace("sent %zu bytes (sendAll)", data.size());
     return true;
 }
 
@@ -89,7 +121,7 @@ int clientSocket::receiveData(char* buffer, size_t size) {
     }
 
     buffer[n] = '\0';
-    cTrace("received %zd bytes", n);
+    //cTrace("received %zd bytes", n);
     return (int)n;
 }
 
@@ -140,7 +172,7 @@ bool clientSocket::receiveExact(void* buffer, size_t len) {
         ssize_t n = ::recv(client_fd, p + total, len - total, 0);
         if (n < 0) {
             if (errno == EINTR) 
-            continue; 
+                continue; 
 
             cErr("recv() failed in receiveExact(): %s", strerror(errno));
             return false;
@@ -175,7 +207,6 @@ int clientSocket::receiveCString(char* buffer, size_t cap) {
             return -1;
         }
         if (n == 0) {
-            // connection closed
             break;
         }
 

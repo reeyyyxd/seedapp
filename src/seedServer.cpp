@@ -61,8 +61,8 @@ bool SeedServer::handleList(int clientFd, int port) {
 
         const char* name = entry->d_name;
         size_t len = std::strlen(name);
-        if (len >= 5 && std::strcmp(name + (len - 5), ".part") == 0) {
-            continue;
+        if (std::strstr(name, ".part") != nullptr) {
+            continue; // this is changed
         }
 
         char full[512];
@@ -88,9 +88,8 @@ bool SeedServer::handleList(int clientFd, int port) {
 
 bool SeedServer::handleMeta(int clientFd, int port, const char* filename) {
 
-     // Reject partial downloads
     size_t len = std::strlen(filename);
-    if (len >= 5 && std::strcmp(filename + (len - 5), ".part") == 0) {
+    if (std::strstr(filename, ".part") != nullptr) {
         const char* bad = "<BAD_REQUEST>\n";
         NetIo::sendAll(clientFd, bad, std::strlen(bad));
         return false;
@@ -192,7 +191,7 @@ bool SeedServer::handleGet(int clientFd, int port, const char* line) {
         return false;
     }
 
-    if (filename.size() >= 5 && filename.compare(filename.size() - 5, 5, ".part") == 0) {
+   if (filename.find(".part") != std::string::npos) {
         const char* bad = "<BAD_REQUEST>\n";
         NetIo::sendAll(clientFd, bad, std::strlen(bad));
         return false;
@@ -234,37 +233,78 @@ bool SeedServer::handleGet(int clientFd, int port, const char* line) {
     return NetIo::sendAll(clientFd, buf.data(), rd);
 }
 
-void SeedServer::handleClient(int clientFd, int port) {
-    char line[256];
-    int n = NetIo::recvLine(clientFd, line, sizeof(line));
-    if (n <= 0) { ::close(clientFd); return; }
+// void SeedServer::handleClient(int clientFd, int port) {
+//     char line[256];
+//     int n = NetIo::recvLine(clientFd, line, sizeof(line));
+//     if (n <= 0) { ::close(clientFd); return; }
 
-    size_t L = strlen(line);
-    if (L && line[L - 1] == '\n') line[L - 1] = '\0';
+//     size_t L = strlen(line);
+//     if (L && line[L - 1] == '\n') line[L - 1] = '\0';
     
 
-    if (strcmp(line, "LIST") == 0) {
-        handleList(clientFd, port);
-        ::close(clientFd);
-        return;
+//     if (strcmp(line, "LIST") == 0) {
+//         handleList(clientFd, port);
+//         ::close(clientFd);
+//         return;
+//     }
+
+//     if (strncmp(line, "META ", 5) == 0) {
+//         handleMeta(clientFd, port, line + 5);
+//         ::close(clientFd);
+//         return;
+//     }
+
+//     if (strncmp(line, "GET ", 4) == 0) {
+//         handleGet(clientFd, port, line);
+//         ::close(clientFd);
+//         return;
+//     }
+
+//     const char* bad = "<BAD_REQUEST>\n";
+//     NetIo::sendAll(clientFd, bad, strlen(bad));
+//     ::close(clientFd);
+// }
+
+void SeedServer::handleClient(int clientFd, int port)
+{
+    char line[256];
+
+    while (true)
+    {
+        int n = NetIo::recvLine(clientFd, line, sizeof(line));
+        if (n <= 0) break;
+
+        // strip \r\n
+        size_t L = std::strlen(line);
+        while (L > 0 && (line[L - 1] == '\n' || line[L - 1] == '\r')) {
+            line[L - 1] = '\0';
+            L--;
+        }
+
+        if (std::strcmp(line, "LIST") == 0)
+        {
+            handleList(clientFd, port);
+            continue;
+        }
+        if (std::strncmp(line, "META ", 5) == 0)
+        {
+            handleMeta(clientFd, port, line + 5);
+            continue;
+        }
+        if (std::strncmp(line, "GET ", 4) == 0)
+        {
+            handleGet(clientFd, port, line);
+            continue;
+        }
+
+        const char* bad = "<BAD_REQUEST>\n";
+        NetIo::sendAll(clientFd, bad, std::strlen(bad));
     }
 
-    if (strncmp(line, "META ", 5) == 0) {
-        handleMeta(clientFd, port, line + 5);
-        ::close(clientFd);
-        return;
-    }
-
-    if (strncmp(line, "GET ", 4) == 0) {
-        handleGet(clientFd, port, line);
-        ::close(clientFd);
-        return;
-    }
-
-    const char* bad = "<BAD_REQUEST>\n";
-    NetIo::sendAll(clientFd, bad, strlen(bad));
     ::close(clientFd);
 }
+
+
 
 void SeedServer::serveLoop(int port, int listenFd) {
     serversocket ss(port);

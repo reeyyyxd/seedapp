@@ -1,6 +1,7 @@
-#ifndef __CHUNCKDOWNLOADER_H__
-#define __CHUNCKDOWNLOADER_H__
+#ifndef __CHUNKDOWNLOADER_H__
+#define __CHUNKDOWNLOADER_H__
 
+#include "../inc/clientsocket.h"
 #include <string>
 #include <vector>
 #include <atomic>
@@ -56,14 +57,20 @@ public:
 
 private:
     bool fetchMeta(const std::string& filename, int seederPort, long long& outSize);
-    bool fetchChunk(const std::string& filename, int seederPort, int chunkIndex,
-                char* outBuf, size_t& outN, int* outCode);
+    bool fetchChunk(const std::string& filename,
+                    clientSocket& cs,
+                    int chunkIndex,
+                    char* outBuf,
+                    size_t& outN,
+                    int* outCode);
+
 
     std::string portDirectory(int port) const;
 
     int chunkSize_;
     int startPort_;
     int endPort_;
+
 };
 
 #endif
